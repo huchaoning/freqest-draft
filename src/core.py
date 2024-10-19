@@ -1,3 +1,4 @@
+import os
 from math import *
 import numpy as np
 from datetime import datetime, timedelta, timezone
@@ -101,7 +102,7 @@ class qCMOS(Dcam):
 class DMD(ALP4):
     PIXEL_SIZE = 19.374725804511403 #um
     
-    def __init__(self, version='4.3', libDir='./api/'):
+    def __init__(self, version='4.3', libDir=os.path.join(f'{os.path.dirname(__file__)}', 'api/')):
         super().__init__(version, libDir)
         self.ez_isopen = False
 
