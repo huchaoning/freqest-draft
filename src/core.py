@@ -101,6 +101,9 @@ class qCMOS(Dcam):
 
 class DMD(ALP4):
     PIXEL_SIZE = 19.374725804511403 #um
+
+    TRIANGLE_SEQ = np.ravel((np.array([np.arange(-5, 6), np.arange(-5, 6)])).T)[::-1][1:-1]
+    TRIANGLE_SEQ = np.concatenate([TRIANGLE_SEQ, TRIANGLE_SEQ[::-1]])
     
     def __init__(self, version='4.3', libDir=os.path.join(f'{os.path.dirname(__file__)}', 'api/')):
         super().__init__(version, libDir)
