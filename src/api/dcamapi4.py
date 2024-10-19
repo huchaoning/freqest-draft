@@ -7,6 +7,7 @@ import platform
 from enum import IntEnum
 from ctypes import *
 
+import os
 
 # ==== load shared library ====
 
@@ -14,7 +15,7 @@ from ctypes import *
 
 __platform_system = platform.system()
 if __platform_system == 'Windows':
-    __dll = windll.LoadLibrary('dcamapi.dll')
+    __dll = windll.LoadLibrary(os.path.join(os.path.dirname(__file__), 'x64/dcamapi.dll'))
 else:  # Linux
     __dll = cdll.LoadLibrary('/usr/local/lib/libdcamapi.so')
 

@@ -169,8 +169,8 @@ class _Share:
 
 class SPADE(_Share):
     X_AXIS = 89
-    POINT_1 = 407
-    POINT_2 = 119
+    POINT_1 = 406
+    POINT_2 = 116
 
     ROI = {'X0': 2128, 'Y0': 720, 'W': 180, 'H': 500}
 
