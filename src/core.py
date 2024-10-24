@@ -1,10 +1,9 @@
 import os
 from math import *
 import numpy as np
-from datetime import datetime, timedelta, timezone
+from dataclasses import dataclass
 
 from .estimator import freq_estimator
-from .api import *
 
 
 __all__ = [
@@ -13,137 +12,27 @@ __all__ = [
 
     'SPADE',
     'DI',
+
+    'MetaData',
+    'FrequencyEstmation'
 ]
 
 
 #################### 
 #    Equipments    #
 ####################
-class qCMOS(Dcam):
+class qCMOS:
     # The camera pixel size is 4.6 um per pixel.
     PIXEL_SIZE = 4.6 #um
     CONVERSION_FACTOR = 0.107
 
-    
-    def __init__(self, iDevice=0):
-        super().__init__(iDevice)
-        self.ez_isopen = False
 
 
-    def __enter__(self):
-        Dcamapi.init()
-        self.dev_open()
-        self.prop_setvalue(DCAM_IDPROP.SENSORCOOLER, DCAMPROP.SENSORCOOLER.MAX)
-        self.ez_isopen = True
-        return self
-
-
-    def __exit__(self, *args):
-        if self.ez_isopen:
-            self.cap_stop()
-            self.buf_release()
-            self.dev_close()
-            Dcamapi.uninit()
-            self.ez_isopen = False
-            print('exited')
-
-
-    def ez_exposure_time(self, exposure_time):
-        self.prop_setvalue(DCAM_IDPROP.EXPOSURETIME, exposure_time)
-
-
-    def ez_triggersource_masterpluse(self, burst_times, interval):
-        self.prop_setvalue(DCAM_IDPROP.TRIGGERSOURCE, DCAMPROP.TRIGGERSOURCE.MASTERPULSE)
-        self.prop_setvalue(DCAM_IDPROP.MASTERPULSE_MODE, DCAMPROP.MASTERPULSE_MODE.BURST)
-        self.prop_setvalue(DCAM_IDPROP.MASTERPULSE_TRIGGERSOURCE, DCAMPROP.MASTERPULSE_TRIGGERSOURCE.SOFTWARE)
-
-        self.prop_setvalue(DCAM_IDPROP.MASTERPULSE_BURSTTIMES, burst_times)
-        self.prop_setvalue(DCAM_IDPROP.MASTERPULSE_INTERVAL, interval)
-
-    
-    def ez_triggersource_external(self):
-        self.prop_setvalue(DCAM_IDPROP.TRIGGERSOURCE, DCAMPROP.TRIGGERSOURCE.EXTERNAL)
-
-
-    def ez_temperature(self):
-        return self.prop_getvalue(DCAM_IDPROP.SENSORTEMPERATURE)
-    
-
-    def ez_roi(self, X0, Y0, W, H):
-        self.prop_setvalue(DCAM_IDPROP.SUBARRAYHPOS, X0)
-        self.prop_setvalue(DCAM_IDPROP.SUBARRAYVPOS, Y0)
-        self.prop_setvalue(DCAM_IDPROP.SUBARRAYHSIZE, W)
-        self.prop_setvalue(DCAM_IDPROP.SUBARRAYVSIZE, H)
-        self.prop_setvalue(DCAM_IDPROP.SUBARRAYMODE,  2)
-
-
-    def ez_wait_capture(self, timeout=18446744073709551616):
-        while True:
-            if self.wait_event(DCAMWAIT_CAPEVENT.CYCLEEND, timeout) is not False:
-                break
-
-    
-    def ez_read_buf(self, iFrame, read_timestamp=True):
-        frame = self.buf_getframe(iFrame)
-        timestamp = self.ez_fmt_time(frame[0]) if read_timestamp else 0
-        data = frame[1]
-        return data, timestamp
-
-
-    @classmethod
-    def ez_fmt_time(self, buf_frame: DCAMBUF_FRAME):
-        total_seconds = buf_frame.timestamp.sec + buf_frame.timestamp.microsec / 1_000_000
-        china_time = datetime.fromtimestamp(total_seconds, tz=timezone.utc).astimezone(timezone(timedelta(hours=8)))
-        return china_time.strftime('%Y-%m-%d %H:%M:%S.%f') 
-
-
-
-
-class DMD(ALP4):
+class DMD:
     PIXEL_SIZE = 19.374725804511403 #um
 
     TRIANGLE_SEQ = np.ravel((np.array([np.arange(-5, 6), np.arange(-5, 6)])).T)[::-1][1:-1]
     TRIANGLE_SEQ = np.concatenate([TRIANGLE_SEQ, TRIANGLE_SEQ[::-1]])
-    
-    def __init__(self, version='4.3', libDir=os.path.join(f'{os.path.dirname(__file__)}', 'api/')):
-        super().__init__(version, libDir)
-        self.ez_isopen = False
-
-
-    def __enter__(self):
-        self.Initialize()
-        self.ez_load_seq([self.ez_single_pixel(0)])
-        self.Run(loop=False)
-        self.Wait()
-        self.ez_isopen = True
-        return self
-
-
-    def __exit__(self, *args):
-        self.Halt()
-        try:
-            self.FreeSeq()
-        except ValueError:
-            pass
-        self.Free()
-        self.ez_isopen = False
-        print('exited')
-
-    
-    def ez_single_pixel(self, pixels):
-        img = np.ones([self.nSizeY, self.nSizeX]) * (2**8 - 1)
-        img[self.nSizeY//2 - pixels, self.nSizeX//2 + pixels] = 0
-        return img.ravel()
-
-
-    def ez_load_seq(self, Imgs, PictureTime=50):
-        imgSeq = np.concatenate(Imgs)
-        self.SeqAlloc(nbImg=len(Imgs), bitDepth=1)
-        self.SeqPut(imgData=imgSeq)
-        self.SeqControl(ALP_BIN_MODE, ALP_BIN_UNINTERRUPTED)
-        self.SetTiming(pictureTime=PictureTime)
-
-
 
 
 
@@ -151,19 +40,20 @@ class DMD(ALP4):
 #    Measurements    #
 ######################
 class _Share:
-    @classmethod
-    def load(cls, file):
-        cls.file = file
+    def __init__(self, raw):
+        self.raw = raw.astype(float)
 
+    def est_pn(self):
+        self.pn = (self.cropped.sum(-1) - 400) * qCMOS.CONVERSION_FACTOR
 
-    @classmethod
-    def read(cls):
-        cls.raw = np.load(cls.file).astype(float)
+    def est_lse(self):
+        self.lse = np.array([freq_estimator(sample) for sample in self.td])
 
-
-    @classmethod
-    def freq_est(cls):
-        cls.freq = np.array([freq_estimator(sample) for sample in cls.td])
+    def est_all(self):
+        self.crop()
+        self.est_td()
+        self.est_lse()
+        self.est_pn()
 
 
 
@@ -174,20 +64,62 @@ class SPADE(_Share):
 
     ROI = {'X0': 2128, 'Y0': 720, 'W': 180, 'H': 500}
 
-    @classmethod
-    def crop(cls):
-        cls.cropped = cls.raw[..., (cls.POINT_1, cls.POINT_2), cls.X_AXIS]
+    def crop(self):
+        self.cropped = self.raw[..., (self.POINT_1, self.POINT_2), self.X_AXIS]
 
 
-    @classmethod
-    def photons(cls):
-        cls.pn = cls.cropped.sum(-1) - 400
-
-
-    @classmethod
-    def td_est(cls):
-        cls.td = cls.cropped[..., 0] - cls.cropped[..., 1]
+    def est_td(self):
+        self.td = self.cropped[..., 1] - self.cropped[..., 0]
 
 
 class DI(_Share):
     pass
+
+
+
+
+######################
+#      Main Cls      #
+######################
+@dataclass
+class MetaData:
+    measurement: str
+    ground_truth: float
+    amplitude: int
+    timestamp: np.ndarray
+
+
+
+@dataclass
+class FrequencyEstmation:
+    raw: np.ndarray
+    metadata: MetaData
+
+    def run(self):
+        if self.metadata.measurement.upper() == 'SPADE':
+            expt = SPADE(self.raw)
+        elif self.metadata.measurement.upper() == 'DI':
+            expt = DI(self.raw)
+        else:
+            raise ValueError
+        
+        expt.est_all()
+        del self.raw # Delete raw data to save memory
+
+        self.cropped_data = expt.cropped
+        self.time_domain = expt.td
+        self.frequency_estmates = expt.lse[..., 0]
+        self.phase_estmates = expt.lse[..., 1]
+        self.photons = expt.pn
+
+
+    def savez(self, filename):
+        filename = os.path.expanduser(filename)
+        if not os.path.exists(filename): 
+            np.savez_compressed(filename, **self.__dict__)
+        else:
+            print(f'ERROR: File {filename} already exists.')
+            
+
+
+
