@@ -14,6 +14,8 @@ __all__ = [
     'DI',
 
     'MetaData',
+    'Estmates',
+    'LoadEstmates',
     'FrequencyEstmation',
 
     'FIM_CRB'
@@ -91,36 +93,84 @@ class MetaData:
     timestamp: np.ndarray
 
 
-
 @dataclass
-class FrequencyEstmation:
-    raw: np.ndarray
-    metadata: MetaData
+class Estmates:
+    frequency_estmates: np.ndarray
+    phase_estmates: np.ndarray
 
-    def run(self):
-        if self.metadata.measurement.upper() == 'SPADE':
-            expt = SPADE(self.raw)
-        elif self.metadata.measurement.upper() == 'DI':
-            expt = DI(self.raw)
-        else:
-            raise ValueError
-        
-        expt.est_all()
-        del self.raw # Delete raw data to save memory
+    cropped_data: np.ndarray
+    time_domain: np.ndarray
+    photons: np.ndarray
 
-        self.cropped_data = expt.cropped
-        self.time_domain = expt.td
-        self.frequency_estmates = expt.lse[..., 0]
-        self.phase_estmates = expt.lse[..., 1]
-        self.photons = expt.pn
-
+    metadata: MetaData = None
 
     def savez(self, filename):
         filename = os.path.expanduser(filename)
-        if not os.path.exists(filename): 
-            np.savez_compressed(filename, **self.__dict__)
-        else:
-            print(f'ERROR: File {filename} already exists.')
+
+        if os.path.exists(filename): 
+            override = input(f'File {filename} already exists, override? [y/N]')
+            if not override.lower() in ('yes', 'y'):
+                return
+
+        np.savez_compressed(filename, **self.__dict__)
+
+
+
+def LoadEstmates(file):
+    file = os.path.expanduser(file)
+    npz = np.load(file, allow_pickle=True)
+    dic = {}
+    for k in npz.files:
+        dic[k] = npz[k]
+        if k.lower() == 'metadata':
+            dic[k] = npz[k].item()
+    return Estmates(**dic)
+
+
+
+def FrequencyEstmation(raw: np.ndarray, measurement: str, metadata: MetaData = None):
+    if measurement.upper() == 'SPADE':
+        expt = SPADE(raw)
+    elif measurement.upper() == 'DI':
+        expt = DI(raw)
+    else:
+        raise ValueError
+    
+    expt.est_all()
+    return Estmates(expt.lse[..., 0], expt.lse[..., 1],expt.cropped, expt.td, expt.pn, metadata)
+
+
+
+
+# @dataclass
+# class FrequencyEstmation:
+#     raw: np.ndarray
+#     metadata: MetaData
+
+#     def run(self):
+#         if self.metadata.measurement.upper() == 'SPADE':
+#             expt = SPADE(self.raw)
+#         elif self.metadata.measurement.upper() == 'DI':
+#             expt = DI(self.raw)
+#         else:
+#             raise ValueError
+        
+#         expt.est_all()
+#         del self.raw # Delete raw data to save memory
+
+#         self.cropped_data = expt.cropped
+#         self.time_domain = expt.td
+#         self.frequency_estmates = expt.lse[..., 0]
+#         self.phase_estmates = expt.lse[..., 1]
+#         self.photons = expt.pn
+
+
+#     def savez(self, filename):
+#         filename = os.path.expanduser(filename)
+#         if not os.path.exists(filename): 
+#             np.savez_compressed(filename, **self.__dict__)
+#         else:
+#             print(f'ERROR: File {filename} already exists.')
 
 
 
