@@ -14,7 +14,9 @@ __all__ = [
     'DI',
 
     'MetaData',
-    'FrequencyEstmation'
+    'FrequencyEstmation',
+
+    'FIM_CRB'
 ]
 
 
@@ -119,7 +121,72 @@ class FrequencyEstmation:
             np.savez_compressed(filename, **self.__dict__)
         else:
             print(f'ERROR: File {filename} already exists.')
-            
 
 
+
+
+######################
+#     FI and CRB     #
+######################
+class FIM_CRB:
+    def __init__(self, 
+                 N: int = 50,
+                 phi: float = 0, 
+                 sigma: float = 103,
+
+                 multi: bool = True, 
+                 approx: bool = False,
+
+                 waveform: str = 'sin'):
+        
+        self.N = N
+        self.phi = phi
+        self.sigma = sigma
+
+        self.multi = multi
+        self.approx = approx
+
+        if waveform.lower() in ('sin', 'cos'):
+            self.waveform = waveform
+        else:
+            raise ValueError('Waveform must be sin or cos.')
+        
+        
+    def fim(self, A, f):
+        n = tau * np.arange(self.N)
+        if self.approx:
+            fi11 = (n**2).sum() / 2
+            fi12 = (n**1).sum() / 2
+            fi22 = (n**0).sum() / 2
+        elif self.waveform.lower() == 'sin':
+            fi11 = (n**2 * np.cos(f*n + self.phi)**2).sum()
+            fi12 = (n**1 * np.cos(f*n + self.phi)**2).sum()
+            fi22 = (n**0 * np.cos(f*n + self.phi)**2).sum()
+        elif self.waveform.lower() == 'cos':
+            fi11 = (n**2 * np.sin(f*n + self.phi)**2).sum()
+            fi12 = (n**1 * np.sin(f*n + self.phi)**2).sum()
+            fi22 = (n**0 * np.sin(f*n + self.phi)**2).sum()
+        else:
+            raise ValueError
+
+        if self.multi:
+            return (A/self.sigma)**2 * np.array([[fi11, fi12], [fi12, fi22]])
+        elif not self.multi:
+            return (A/self.sigma)**2 * fi11
+        else:
+            raise ValueError
+        
+
+    def crb(self, A, f):
+        matrix = self.fim(A, f)
+        if self.multi:
+            return np.linalg.inv(matrix)[0, 0]
+        elif not self.multi:
+            return 1 / matrix
+        else:
+            raise ValueError
+
+
+    def crb_list(self, A, f_list):
+        return np.array([self.crb(A, f) for f in f_list])
 
