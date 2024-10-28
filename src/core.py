@@ -29,6 +29,7 @@ class qCMOS:
     # The camera pixel size is 4.6 um per pixel.
     PIXEL_SIZE = 4.6 #um
     CONVERSION_FACTOR = 0.107
+    OFFSET = 200
 
 
 
@@ -47,11 +48,20 @@ class _Share:
     def __init__(self, raw):
         self.raw = raw.astype(float)
 
+        temp = self.raw[..., :-4, :]
+        noise = (temp[..., :5,   :5].mean((-1, -2)) + temp[..., -5:,   :5].mean((-1, -2))  + 
+                 temp[..., :5, -5: ].mean((-1, -2)) + temp[..., -5:, -5: ].mean((-1, -2))) / 4
+        self.noise = (noise - qCMOS.OFFSET) * qCMOS.CONVERSION_FACTOR
+        del raw, temp, noise
+
     def est_pn(self):
-        self.pn = (self.cropped.sum(-1) - 400) * qCMOS.CONVERSION_FACTOR
+        self.pn = (self.cropped - qCMOS.OFFSET).sum(-1) * qCMOS.CONVERSION_FACTOR
 
     def est_lse(self):
         self.lse = np.array([freq_estimator(sample) for sample in self.td])
+
+    def est_w(self):
+        self.w = self.noise / (self.cropped - qCMOS.OFFSET).mean(-1) * qCMOS.CONVERSION_FACTOR
 
     def est_all(self):
         self.crop()
@@ -102,6 +112,9 @@ class Estmates:
     time_domain: np.ndarray
     photons: np.ndarray
 
+    noise: np.ndarray
+    noise_weight: np.ndarray
+
     metadata: MetaData = None
 
     def savez(self, filename):
@@ -137,41 +150,17 @@ def FrequencyEstmation(raw: np.ndarray, measurement: str, metadata: MetaData = N
         raise ValueError
     
     expt.est_all()
-    return Estmates(expt.lse[..., 0], expt.lse[..., 1],expt.cropped, expt.td, expt.pn, metadata)
+    return Estmates(expt.lse[..., 0], 
+                    expt.lse[..., 1], 
 
+                    expt.cropped, 
+                    expt.td, 
+                    expt.pn, 
 
-
-
-# @dataclass
-# class FrequencyEstmation:
-#     raw: np.ndarray
-#     metadata: MetaData
-
-#     def run(self):
-#         if self.metadata.measurement.upper() == 'SPADE':
-#             expt = SPADE(self.raw)
-#         elif self.metadata.measurement.upper() == 'DI':
-#             expt = DI(self.raw)
-#         else:
-#             raise ValueError
-        
-#         expt.est_all()
-#         del self.raw # Delete raw data to save memory
-
-#         self.cropped_data = expt.cropped
-#         self.time_domain = expt.td
-#         self.frequency_estmates = expt.lse[..., 0]
-#         self.phase_estmates = expt.lse[..., 1]
-#         self.photons = expt.pn
-
-
-#     def savez(self, filename):
-#         filename = os.path.expanduser(filename)
-#         if not os.path.exists(filename): 
-#             np.savez_compressed(filename, **self.__dict__)
-#         else:
-#             print(f'ERROR: File {filename} already exists.')
-
+                    expt.noise,
+                    expt.w,
+                
+                    metadata)
 
 
 
