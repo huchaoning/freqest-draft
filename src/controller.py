@@ -2,6 +2,7 @@ import os
 from math import *
 import numpy as np
 from datetime import datetime, timedelta, timezone
+import paramiko
 
 from .api import *
 
@@ -128,3 +129,24 @@ class EasyALP4(ALP4):
         self.SeqPut(imgData=imgSeq)
         self.SeqControl(ALP_BIN_MODE, ALP_BIN_UNINTERRUPTED)
         self.SetTiming(pictureTime=PictureTime)
+
+
+
+class RaspiLED:
+    def __init__(self, ip='192.168.137.158'):
+        self.ssh = paramiko.SSHClient()
+        self.ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        self.ssh.connect(hostname=ip, port=22, username='qlab', password='123456')
+
+
+    def turn_off(self):
+        pass
+
+
+    def turn_on(self, brightness):
+        _ = self.ssh.exec_command(f'./pwm.sh 18 2000 {brightness}')
+
+
+    def close(self):
+        self.turn_off()
+        self.ssh.close()

@@ -67,6 +67,7 @@ class _Share:
         self.crop()
         self.est_td()
         self.est_lse()
+        self.est_w()
         self.est_pn()
 
 
@@ -112,8 +113,8 @@ class Estmates:
     time_domain: np.ndarray
     photons: np.ndarray
 
-    noise: np.ndarray
-    noise_weight: np.ndarray
+    # noise: np.ndarray
+    # noise_weight: np.ndarray
 
     metadata: MetaData = None
 
