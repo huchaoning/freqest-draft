@@ -113,8 +113,8 @@ class Estmates:
     time_domain: np.ndarray
     photons: np.ndarray
 
-    # noise: np.ndarray
-    # noise_weight: np.ndarray
+    noise: np.ndarray
+    noise_weight: np.ndarray
 
     metadata: MetaData = None
 
@@ -151,17 +151,17 @@ def FrequencyEstmation(raw: np.ndarray, measurement: str, metadata: MetaData = N
         raise ValueError
     
     expt.est_all()
-    return Estmates(expt.lse[..., 0], 
-                    expt.lse[..., 1], 
+    return Estmates(frequency_estmates = expt.lse[..., 0], 
+                    phase_estmates = expt.lse[..., 1], 
 
-                    expt.cropped, 
-                    expt.td, 
-                    expt.pn, 
+                    cropped_data = expt.cropped, 
+                    time_domain = expt.td, 
+                    photons = expt.pn, 
 
-                    expt.noise,
-                    expt.w,
+                    noise = expt.noise,
+                    noise_weight = expt.w,
                 
-                    metadata)
+                    metadata = metadata)
 
 
 
