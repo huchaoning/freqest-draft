@@ -2,7 +2,11 @@ import os
 from math import *
 import numpy as np
 from datetime import datetime, timedelta, timezone
+
 import paramiko
+import warnings
+from cryptography.utils import CryptographyDeprecationWarning
+warnings.filterwarnings('ignore', category=CryptographyDeprecationWarning)
 
 from .api import *
 
@@ -26,6 +30,7 @@ class EasyDcam(Dcam):
         Dcamapi.init()
         self.dev_open()
         self.prop_setvalue(DCAM_IDPROP.SENSORCOOLER, DCAMPROP.SENSORCOOLER.MAX)
+        print(f'qCMOS found, current sensor temperature is {self.ez_temperature()}.')
         self.ez_isopen = True
         return self
 
@@ -133,20 +138,18 @@ class EasyALP4(ALP4):
 
 
 class RaspiLED:
-    def __init__(self, ip='192.168.137.158'):
+    def __enter__(self):
         self.ssh = paramiko.SSHClient()
         self.ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        self.ssh.connect(hostname=ip, port=22, username='qlab', password='123456')
-
+        self.ssh.connect(hostname='192.168.137.158', port=22, username='qlab', password='123456')
+        return self
 
     def turn_off(self):
-        pass
+        _ = self.ssh.exec_command('./pwm.sh 18 2000 0')
 
-
-    def turn_on(self, brightness):
+    def brightness(self, brightness):
         _ = self.ssh.exec_command(f'./pwm.sh 18 2000 {brightness}')
 
-
-    def close(self):
+    def __exit__(self, *args):
         self.turn_off()
         self.ssh.close()
