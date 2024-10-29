@@ -1,9 +1,10 @@
 from math import *
 import numpy as np
-from scipy.optimize import curve_fit
+from scipy.optimize import curve_fit, minimize
+from .core import DI, DMD, qCMOS
 
 
-__all__ = ['freq_estimator']
+__all__ = ['freq_estimator', 'di_td_estimator']
 
 
 def freq_estimator(sample: np.ndarray, sampling_rate=1, method='lse'):
@@ -55,3 +56,44 @@ def freq_estimator(sample: np.ndarray, sampling_rate=1, method='lse'):
     else:
         raise ValueError('method must be lse or fft')
 
+
+
+
+def di_td_estimator(sample: np.ndarray, noise = None, method='mle'):
+        origin_shape = sample.shape
+
+        detectors = origin_shape[-1]
+        works = np.prod(origin_shape[:-1])
+
+        flatten_data = sample.reshape(-1, detectors)
+
+        if method.lower() == 'simple':
+            temp = flatten_data / flatten_data.sum(axis=-1).reshape(-1, 1)
+            x_axis = np.arange(detectors)
+            time_domain = (temp @ x_axis)
+
+        elif method.lower() == 'mle':
+            def _p(x, s, w):
+                _sigma = DI.SIGMA / qCMOS.PIXEL_SIZE
+                return (1-w)/np.sqrt(tau*_sigma**2)*np.exp(-(x-s)**2/(2*_sigma**2)) + w/detectors
+            
+            def _negative_ll(data, w):
+                x_axis = np.arange(detectors)
+                return lambda s: - data.T @ np.log(_p(x_axis, s, w)) / data.sum()
+            
+            def _run_mle(data, w):
+                # Use BFGS algorithm to minimize negative log-likelihood function.
+                result = minimize(_negative_ll(data, w), x0=detectors/2, method='BFGS')
+                
+                if result.success:
+                    return result.x[0]
+                else:
+                    raise RuntimeError('not converged')
+            
+            if noise is None:
+                time_domain = [_run_mle(flatten_data[i], 0) for i in range(works)]
+            else:
+                w_set = np.ravel(noise) / flatten_data.mean(-1)
+                time_domain = [_run_mle(flatten_data[i], w_set[i]) for i in range(works)]  
+
+            return time_domain.reshape(*origin_shape[:-1])

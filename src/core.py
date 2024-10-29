@@ -88,7 +88,22 @@ class SPADE(_Share):
 
 
 class DI(_Share):
-    pass
+    SIGMA = 103 #um
+
+    X_AXIS = 82
+    CENTER = 109
+    
+    ROI = {'X0': 1440, 'Y0': 880, 'W': 160, 'H': 220}
+
+    def __init__(self, raw, amplitude):
+        super().__init__(raw)
+        self.amplitude = amplitude
+        self.upper_bound = int(np.ceil(self.CENTER - (2*amplitude + 3*self.SIGMA) / qCMOS.PIXEL_SIZE))
+        self.lower_bound = int(np.ceil(self.CENTER + 3*self.SIGMA / qCMOS.PIXEL_SIZE))
+        self.detectors = self.lower_bound - self.upper_bound
+
+    def crop(self):
+        self.cropped = self.raw[..., self.upper_bound:self.lower_bound, self.X_AXIS]
 
 
 
@@ -142,11 +157,11 @@ def LoadEstmates(file):
 
 
 
-def FrequencyEstmation(raw: np.ndarray, measurement: str, metadata: MetaData = None):
-    if measurement.upper() == 'SPADE':
+def FrequencyEstmation(raw: np.ndarray, metadata: MetaData):
+    if metadata.measurement.upper() == 'SPADE':
         expt = SPADE(raw)
-    elif measurement.upper() == 'DI':
-        expt = DI(raw)
+    elif metadata.measurement.upper() == 'DI':
+        expt = DI(raw, metadata.amplitude)
     else:
         raise ValueError
     
