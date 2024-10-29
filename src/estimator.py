@@ -1,7 +1,6 @@
 from math import *
 import numpy as np
 from scipy.optimize import curve_fit, minimize
-from .core import DI, DMD, qCMOS
 
 
 __all__ = ['freq_estimator', 'di_td_estimator']
@@ -60,6 +59,8 @@ def freq_estimator(sample: np.ndarray, sampling_rate=1, method='lse'):
 
 
 def di_td_estimator(sample: np.ndarray, noise = None, method='mle'):
+        from .core import DI, qCMOS
+        
         origin_shape = sample.shape
 
         detectors = origin_shape[-1]
