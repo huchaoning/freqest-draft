@@ -3,10 +3,10 @@ from math import *
 import numpy as np
 from datetime import datetime, timedelta, timezone
 
-import paramiko
 import warnings
 from cryptography.utils import CryptographyDeprecationWarning
 warnings.filterwarnings('ignore', category=CryptographyDeprecationWarning)
+import paramiko
 
 from .api import *
 
@@ -16,7 +16,9 @@ __all__ =[
     'ALP4',
 
     'EasyDcam',
-    'EasyALP4'
+    'EasyALP4',
+
+    'RaspiLED'
 ]
 
 
@@ -42,7 +44,7 @@ class EasyDcam(Dcam):
             self.dev_close()
             Dcamapi.uninit()
             self.ez_isopen = False
-            print('exited')
+            print('EasyDcam exited')
 
 
     def ez_exposure_time(self, exposure_time):
@@ -119,7 +121,7 @@ class EasyALP4(ALP4):
             pass
         self.Free()
         self.ez_isopen = False
-        print('exited')
+        print('EasyALP4 exited')
 
     
     def ez_single_pixel(self, pixels):
@@ -145,7 +147,7 @@ class RaspiLED:
         return self
 
     def turn_off(self):
-        _ = self.ssh.exec_command('./pwm.sh 18 2000 0')
+        _ = self.ssh.exec_command('echo 2 > /sys/class/pwm/pwmchip2/unexport')
 
     def brightness(self, brightness):
         _ = self.ssh.exec_command(f'./pwm.sh 18 2000 {brightness}')
@@ -153,3 +155,4 @@ class RaspiLED:
     def __exit__(self, *args):
         self.turn_off()
         self.ssh.close()
+        print('RaspiLED exited')
