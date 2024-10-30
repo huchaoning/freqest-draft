@@ -150,10 +150,10 @@ class RaspiLED:
     def turn_off(self):
         _ = self.ssh.exec_command('echo 2 > /sys/class/pwm/pwmchip2/unexport')
 
-    def brightness(self, brightness):
-        if brightness > 2000 or brightness < 0:
+    def turn_on(self, duty):
+        if duty > 100 or duty < 0:
             raise ValueError
-        _ = self.ssh.exec_command(f'./pwm.sh 18 2000 {brightness}')
+        _ = self.ssh.exec_command(f'./pwm.sh 18 2000 {20 * duty}')
 
     def __exit__(self, *args):
         self.turn_off()
