@@ -14,9 +14,9 @@ __all__ = [
     'DI',
 
     'MetaData',
-    'Estmates',
-    'LoadEstmates',
-    'FrequencyEstmation',
+    'Estimates',
+    'LoadEstimates',
+    'FrequencyEstimation',
 
     'FIM_CRB'
 ]
@@ -28,7 +28,7 @@ __all__ = [
 class qCMOS:
     # The camera pixel size is 4.6 um per pixel.
     PIXEL_SIZE = 4.6 #um
-    CONVERSION_FACTOR = 0.107
+    CONVERSION_FACTOR = 0.11
     OFFSET = 200
 
 
@@ -120,7 +120,7 @@ class MetaData:
 
 
 @dataclass
-class Estmates:
+class Estimates:
     frequency_estmates: np.ndarray
     phase_estmates: np.ndarray
 
@@ -145,7 +145,7 @@ class Estmates:
 
 
 
-def LoadEstmates(file):
+def LoadEstimates(file):
     file = os.path.expanduser(file)
     npz = np.load(file, allow_pickle=True)
     dic = {}
@@ -153,11 +153,11 @@ def LoadEstmates(file):
         dic[k] = npz[k]
         if k.lower() == 'metadata':
             dic[k] = npz[k].item()
-    return Estmates(**dic)
+    return Estimates(**dic)
 
 
 
-def FrequencyEstmation(raw: np.ndarray, metadata: MetaData):
+def FrequencyEstimation(raw: np.ndarray, metadata: MetaData):
     if metadata.measurement.upper() == 'SPADE':
         expt = SPADE(raw)
     elif metadata.measurement.upper() == 'DI':
@@ -166,7 +166,7 @@ def FrequencyEstmation(raw: np.ndarray, metadata: MetaData):
         raise ValueError
     
     expt.est_all()
-    return Estmates(frequency_estmates = expt.lse[..., 0], 
+    return Estimates(frequency_estmates = expt.lse[..., 0], 
                     phase_estmates = expt.lse[..., 1], 
 
                     cropped_data = expt.cropped, 
