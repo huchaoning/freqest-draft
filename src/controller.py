@@ -2,6 +2,7 @@ import os
 from math import *
 import numpy as np
 from datetime import datetime, timedelta, timezone
+from time import sleep
 
 import warnings
 from cryptography.utils import CryptographyDeprecationWarning
@@ -144,6 +145,7 @@ class RaspiLED:
         self.ssh = paramiko.SSHClient()
         self.ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         self.ssh.connect(hostname='192.168.137.158', port=22, username='qlab', password='123456')
+        print('SSH connected')
         self.turn_off()
         return self
 
@@ -154,6 +156,14 @@ class RaspiLED:
         if duty > 100 or duty < 0:
             raise ValueError
         _ = self.ssh.exec_command(f'./pwm.sh 18 2000 {20 * duty}')
+
+    def check(self, loops=1, speed=10):
+        print("Trying to turn on LED, check camera's screen.")
+        for _ in loops:
+            for duty in range(1, 101):
+                self.turn_on(duty)
+                sleep(1/speed)
+        self.turn_off()
 
     def __exit__(self, *args):
         self.turn_off()

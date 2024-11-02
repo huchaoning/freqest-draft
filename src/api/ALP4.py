@@ -463,7 +463,7 @@ class ALP4(object):
         else:
             raise ValueError("Version not supported.")
 
-        print("Loading library: " + libPath)
+        # print("Loading library: " + libPath)
 
         self._ALPLib = ct.CDLL(libPath)
 
