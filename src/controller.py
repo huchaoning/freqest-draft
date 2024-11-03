@@ -159,7 +159,7 @@ class RaspiLED:
 
     def check(self, loops=1, speed=10):
         print("Trying to turn on LED, check camera's screen.")
-        for _ in loops:
+        for _ in range(loops):
             for duty in range(1, 101):
                 self.turn_on(duty)
                 sleep(1/speed)
