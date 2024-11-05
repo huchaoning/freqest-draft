@@ -57,7 +57,7 @@ def freq_estimator(sample: np.ndarray, sampling_rate=1, method='lse'):
 
 
 
-def td_estimator(measurement, sample: np.ndarray, w = None, method='mle'):
+def td_estimator(measurement, sample: np.ndarray, w=None, method='mle'):
         from .core import DI, qCMOS
 
         origin_shape = sample.shape

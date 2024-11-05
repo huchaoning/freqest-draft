@@ -126,11 +126,16 @@ class Estimates:
         filename = os.path.expanduser(filename)
 
         if os.path.exists(filename): 
-            override = input(f'File {filename} already exists, override? [y/N]')
-            if not override.lower() in ('yes', 'y'):
-                return
+            raise FileExistsError(f'{filename} already exists')
+        #     override = input(f'File {filename} already exists, override? [y/N]')
+        #     if not override.lower() in ('yes', 'y'):
+        #         return
 
         np.savez_compressed(filename, **self.__dict__)
+
+    @classmethod
+    def load(cls, file):
+        return LoadEstimates(file)
 
 
 
@@ -146,26 +151,42 @@ def LoadEstimates(file):
 
 
 
-def FrequencyEstimation(raw: np.ndarray, metadata: MetaData):
-    if metadata.measurement.upper() == 'SPADE':
-        expt = SPADE(raw)
-    elif metadata.measurement.upper() == 'DI':
-        expt = DI(raw, metadata.amplitude)
-    else:
-        raise ValueError
+class FrequencyEstimation:
+    def __init__(raw: np.ndarray, metadata: MetaData):
+        if metadata.measurement.upper() == 'SPADE':
+            expt = SPADE(raw)
+        elif metadata.measurement.upper() == 'DI':
+            expt = DI(raw, metadata.amplitude)
+        else:
+            raise ValueError
+        
+        expt.est_all()
+        return Estimates(frequency_estmates = expt.lse[..., 0], 
+                         phase_estmates = expt.lse[..., 1], 
+
+                         cropped_data = expt.cropped, 
+                         time_domain = expt.td, 
+                         photons = expt.pn, 
+
+                         noise = expt.noise,
+                         noise_weight = expt.w,
+                    
+                         metadata = metadata)
     
-    expt.est_all()
-    return Estimates(frequency_estmates = expt.lse[..., 0], 
-                    phase_estmates = expt.lse[..., 1], 
+    @classmethod
+    def FromEstimates(cls, estimates_instance: Estimates):
+        c: Estimates = np.copy(estimates_instance).item()
 
-                    cropped_data = expt.cropped, 
-                    time_domain = expt.td, 
-                    photons = expt.pn, 
+        c.photons = (c.cropped_data - qCMOS.OFFSET).sum(-1) * qCMOS.CONVERSION_FACTOR
+        c.noise_weight = c.noise / (c.cropped_data - qCMOS.OFFSET).mean(-1) * qCMOS.CONVERSION_FACTOR
 
-                    noise = expt.noise,
-                    noise_weight = expt.w,
-                
-                    metadata = metadata)
+        c.time_domain = td_estimator(c.metadata.measurement, c.cropped_data, c.noise_weight)
+        lse_results = np.array([freq_estimator(sample) for sample in c.time_domain])
+
+        c.frequency_estmates = lse_results[..., 0]
+        c.phase_estmates = lse_results[..., 1]
+
+        return c
 
 
 
