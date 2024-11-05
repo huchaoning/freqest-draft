@@ -90,9 +90,9 @@ class DI(_Share):
     SIGMA = 103 #um
 
     X_AXIS = 86
-    CENTER = 109
+    CENTER = 113
     
-    ROI = {'X0': 1440, 'Y0': 880, 'W': 160, 'H': 220}
+    ROI = {'X0': 1440, 'Y0': 876, 'W': 160, 'H': 228}
 
     def __init__(self, raw, amplitude):
         super().__init__(raw)
