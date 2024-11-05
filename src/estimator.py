@@ -58,7 +58,7 @@ def freq_estimator(sample: np.ndarray, sampling_rate=1, method='lse'):
 
 
 
-def di_td_estimator(sample: np.ndarray, noise = None, method='mle'):
+def di_td_estimator(sample: np.ndarray, w = None, method='mle'):
         from .core import DI, qCMOS
         
         origin_shape = sample.shape
@@ -91,10 +91,10 @@ def di_td_estimator(sample: np.ndarray, noise = None, method='mle'):
                 else:
                     raise RuntimeError('not converged')
             
-            if noise is None:
+            if w is None:
                 time_domain = [_run_mle(flatten_data[i], 0) for i in range(works)]
             else:
-                w_set = np.ravel(noise) / flatten_data.mean(-1)
+                w_set = np.ravel(w)
                 time_domain = [_run_mle(flatten_data[i], w_set[i]) for i in range(works)]  
 
-            return time_domain.reshape(*origin_shape[:-1])
+        return np.array(time_domain).reshape(*origin_shape[:-1])
