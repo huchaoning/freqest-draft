@@ -58,7 +58,7 @@ class _Share:
         self.crop()
         self.pn = (self.cropped - qCMOS.OFFSET).sum(-1) * qCMOS.CONVERSION_FACTOR
         self.w = self.noise / (self.cropped - qCMOS.OFFSET).mean(-1) * qCMOS.CONVERSION_FACTOR
-        self.td = td_estimator(self.cropped, self.w)
+        self.td = td_estimator(self.__class__.__name__, self.cropped, self.w)
         self.lse = np.array([freq_estimator(sample) for sample in self.td])
 
 

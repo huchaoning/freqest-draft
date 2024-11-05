@@ -3,7 +3,7 @@ import numpy as np
 from scipy.optimize import curve_fit, minimize
 
 
-__all__ = ['freq_estimator', 'di_td_estimator']
+__all__ = ['freq_estimator', 'td_estimator']
 
 
 def freq_estimator(sample: np.ndarray, sampling_rate=1, method='lse'):
