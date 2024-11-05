@@ -3,7 +3,7 @@ from math import *
 import numpy as np
 from dataclasses import dataclass
 
-from .estimator import freq_estimator, di_td_estimator
+from .estimator import freq_estimator, td_estimator
 
 
 __all__ = [
@@ -54,21 +54,13 @@ class _Share:
         self.noise = (noise - qCMOS.OFFSET) * qCMOS.CONVERSION_FACTOR
         del raw, temp, noise
 
-    def est_pn(self):
-        self.pn = (self.cropped - qCMOS.OFFSET).sum(-1) * qCMOS.CONVERSION_FACTOR
-
-    def est_lse(self):
-        self.lse = np.array([freq_estimator(sample) for sample in self.td])
-
-    def est_w(self):
-        self.w = self.noise / (self.cropped - qCMOS.OFFSET).mean(-1) * qCMOS.CONVERSION_FACTOR
-
     def est_all(self):
         self.crop()
-        self.est_w()
-        self.est_td()
-        self.est_lse()
-        self.est_pn()
+        self.pn = (self.cropped - qCMOS.OFFSET).sum(-1) * qCMOS.CONVERSION_FACTOR
+        self.w = self.noise / (self.cropped - qCMOS.OFFSET).mean(-1) * qCMOS.CONVERSION_FACTOR
+        self.td = td_estimator(self.__class__.__name__, self.cropped, self.w)
+        self.lse = np.array([freq_estimator(sample) for sample in self.td])
+
 
 
 
@@ -80,10 +72,8 @@ class SPADE(_Share):
     ROI = {'X0': 2128, 'Y0': 720, 'W': 180, 'H': 500}
 
     def crop(self):
-        self.cropped = self.raw[..., (self.POINT_1, self.POINT_2), self.X_AXIS]
+        self.cropped = (self.raw[..., (self.POINT_1, self.POINT_2), self.X_AXIS] - qCMOS.OFFSET) * qCMOS.CONVERSION_FACTOR
 
-    def est_td(self):
-        self.td = self.cropped[..., 1] - self.cropped[..., 0]
 
 
 class DI(_Share):
@@ -97,15 +87,12 @@ class DI(_Share):
     def __init__(self, raw, amplitude):
         super().__init__(raw)
         self.amplitude = amplitude
-        self.upper_bound = int(np.ceil(self.CENTER - (2*amplitude + 3*self.SIGMA) / qCMOS.PIXEL_SIZE))
-        self.lower_bound = int(np.ceil(self.CENTER + 3*self.SIGMA / qCMOS.PIXEL_SIZE))
+        self.upper_bound = int(np.ceil(self.CENTER - (2*amplitude + 4*self.SIGMA) / qCMOS.PIXEL_SIZE))
+        self.lower_bound = int(np.ceil(self.CENTER + 4*self.SIGMA / qCMOS.PIXEL_SIZE))
         self.detectors = self.lower_bound - self.upper_bound
 
     def crop(self):
-        self.cropped = self.raw[..., self.upper_bound:self.lower_bound, self.X_AXIS]
-
-    def est_td(self):
-        self.td = di_td_estimator(self.cropped, self.w)
+        self.cropped = (self.raw[..., self.upper_bound:self.lower_bound, self.X_AXIS] - qCMOS.OFFSET) * qCMOS.CONVERSION_FACTOR
 
 
 
