@@ -3,7 +3,7 @@ from math import *
 import numpy as np
 from dataclasses import dataclass
 
-from .estimator import freq_estimator
+from .estimator import freq_estimator, di_td_estimator
 
 
 __all__ = [
@@ -65,9 +65,9 @@ class _Share:
 
     def est_all(self):
         self.crop()
+        self.est_w()
         self.est_td()
         self.est_lse()
-        self.est_w()
         self.est_pn()
 
 
@@ -82,7 +82,6 @@ class SPADE(_Share):
     def crop(self):
         self.cropped = self.raw[..., (self.POINT_1, self.POINT_2), self.X_AXIS]
 
-
     def est_td(self):
         self.td = self.cropped[..., 1] - self.cropped[..., 0]
 
@@ -90,7 +89,7 @@ class SPADE(_Share):
 class DI(_Share):
     SIGMA = 103 #um
 
-    X_AXIS = 82
+    X_AXIS = 86
     CENTER = 109
     
     ROI = {'X0': 1440, 'Y0': 880, 'W': 160, 'H': 220}
@@ -104,6 +103,9 @@ class DI(_Share):
 
     def crop(self):
         self.cropped = self.raw[..., self.upper_bound:self.lower_bound, self.X_AXIS]
+
+    def est_td(self):
+        self.td = di_td_estimator(self.cropped, self.w)
 
 
 
