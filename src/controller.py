@@ -81,6 +81,9 @@ class EasyDcam(Dcam):
         while True:
             if self.wait_event(DCAMWAIT_CAPEVENT.CYCLEEND, timeout) is not False:
                 break
+            dcamerr = self.lasterr()
+            if dcamerr.is_timeout():
+                raise TimeoutError('===: timeout')
 
     
     def ez_read_buf(self, iFrame, read_timestamp=True):
