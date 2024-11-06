@@ -44,6 +44,12 @@ class DMD:
 ######################
 #    Measurements    #
 ######################
+def _relu(arr):
+    np.array(arr)
+    arr[arr<0] = 0 
+    return arr
+
+
 class _Share:
     def __init__(self, raw):
         self.raw = raw.astype(float)
@@ -57,7 +63,7 @@ class _Share:
     def est_all(self):
         self.crop()
         self.pn = (self.cropped - qCMOS.OFFSET).sum(-1) * qCMOS.CONVERSION_FACTOR
-        self.w = self.noise / (self.cropped - qCMOS.OFFSET).mean(-1) * qCMOS.CONVERSION_FACTOR
+        self.w = _relu(self.noise / (self.cropped - qCMOS.OFFSET).mean(-1) * qCMOS.CONVERSION_FACTOR)
         self.td = td_estimator(self.__class__.__name__, self.cropped, self.w)
         self.lse = np.array([freq_estimator(sample) for sample in self.td])
 
@@ -152,7 +158,8 @@ def LoadEstimates(file):
 
 
 class FrequencyEstimation:
-    def __init__(raw: np.ndarray, metadata: MetaData):
+    @classmethod
+    def FromRaw(cls, raw: np.ndarray, metadata: MetaData):
         if metadata.measurement.upper() == 'SPADE':
             expt = SPADE(raw)
         elif metadata.measurement.upper() == 'DI':
