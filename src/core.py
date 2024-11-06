@@ -62,8 +62,8 @@ class _Share:
 
     def est_all(self):
         self.crop()
-        self.pn = (self.cropped - qCMOS.OFFSET).sum(-1) * qCMOS.CONVERSION_FACTOR
-        self.w = _relu(self.noise / (self.cropped - qCMOS.OFFSET).mean(-1) * qCMOS.CONVERSION_FACTOR)
+        self.pn = self.cropped.sum(-1)
+        self.w = _relu(self.noise / self.cropped.mean(-1))
         self.td = td_estimator(self.__class__.__name__, self.cropped, self.w)
         self.lse = np.array([freq_estimator(sample) for sample in self.td])
 
