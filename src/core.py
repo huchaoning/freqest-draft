@@ -31,6 +31,7 @@ class qCMOS:
     PIXEL_SIZE = 4.6 #um
     CONVERSION_FACTOR = 0.11
     OFFSET = 200
+    QUANTUM_EFFICIENCY = 0.5528
 
 
 
@@ -56,7 +57,7 @@ class _Share:
 
     def est_all(self):
         self.crop()
-        self.pn = (self.cropped.sum(-1) - qCMOS.PIXEL_SIZE) * qCMOS.CONVERSION_FACTOR
+        self.pn = ((self.cropped - qCMOS.OFFSET).sum(-1)) * qCMOS.CONVERSION_FACTOR
         self.w = self.noise / self.cropped.mean(-1)
         self.td = td_estimator(self.__class__.__name__, self.cropped)
         self.lse = np.array([freq_estimator(sample) for sample in self.td])
@@ -168,6 +169,7 @@ class FrequencyEstimation:
         else:
             raise ValueError
         
+        del raw
         expt.est_all()
         return Estimates(frequency_estimates = expt.lse,
 

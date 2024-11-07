@@ -37,7 +37,7 @@ def freq_estimator(sample: np.ndarray, sampling_rate=1, method='lse'):
         # Note that LSE and MLE are the same in WGN.
         n = np.arange(len(sample), dtype=np.float64)
         popt, _= curve_fit(f=waveform, xdata=n, ydata=sample, p0=pre_estimator())
-        return popt
+        return popt.item()
 
     else:
         raise ValueError('method must be lse or fft')
