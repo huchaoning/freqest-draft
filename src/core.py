@@ -18,7 +18,8 @@ __all__ = [
     'LoadEstimates',
     'FrequencyEstimation',
 
-    'FIM_CRB'
+    'FisherInformation',
+    'ApproxFisherInformation'
 ]
 
 
@@ -116,8 +117,7 @@ class MetaData:
 
 @dataclass
 class Estimates:
-    frequency_estmates: np.ndarray
-    phase_estmates: np.ndarray
+    frequency_estimates: np.ndarray
 
     cropped_data: np.ndarray
     time_domain: np.ndarray
@@ -133,9 +133,6 @@ class Estimates:
 
         if os.path.exists(filename): 
             raise FileExistsError(f'{filename} already exists')
-        #     override = input(f'File {filename} already exists, override? [y/N]')
-        #     if not override.lower() in ('yes', 'y'):
-        #         return
 
         np.savez_compressed(filename, **self.__dict__)
 
@@ -168,8 +165,7 @@ class FrequencyEstimation:
             raise ValueError
         
         expt.est_all()
-        return Estimates(frequency_estmates = expt.lse[..., 0], 
-                         phase_estmates = expt.lse[..., 1], 
+        return Estimates(frequency_estimates = expt.lse,
 
                          cropped_data = expt.cropped, 
                          time_domain = expt.td, 
@@ -181,17 +177,14 @@ class FrequencyEstimation:
                          metadata = metadata)
     
     @classmethod
-    def FromEstimates(cls, estimates_instance: Estimates):
-        c: Estimates = np.copy(estimates_instance).item()
+    def FromEstimates(cls, Estimates_instance: Estimates):
+        c: Estimates = np.copy(Estimates_instance).item()
 
         c.photons = (c.cropped_data - qCMOS.OFFSET).sum(-1) * qCMOS.CONVERSION_FACTOR
         c.noise_weight = c.noise / (c.cropped_data - qCMOS.OFFSET).mean(-1) * qCMOS.CONVERSION_FACTOR
 
         c.time_domain = td_estimator(c.metadata.measurement, c.cropped_data, c.noise_weight)
-        lse_results = np.array([freq_estimator(sample) for sample in c.time_domain])
-
-        c.frequency_estmates = lse_results[..., 0]
-        c.phase_estmates = lse_results[..., 1]
+        c.frequency_estimates = np.array([freq_estimator(sample) for sample in c.time_domain])
 
         return c
 
@@ -200,65 +193,18 @@ class FrequencyEstimation:
 ######################
 #     FI and CRB     #
 ######################
-class FIM_CRB:
-    def __init__(self, 
-                 N: int = 50,
-                 phi: float = 0, 
-                 sigma: float = 103,
+def FisherInformation(A_list: np.ndarray, freq_list: np.ndarray, sigma=DI.SIGMA, N=50):
+    results_1, results_2 = [], []
+    n = np.arange(N)
+    for A in A_list:
+        for f in freq_list:
+            _temp = ((tau*n) * np.sin(tau*f*n))**2
+            results_1.append((A/sigma)**2 * _temp.sum())
+        results_2.append(results_1)
+    return np.array(results_2)
 
-                 multi: bool = True, 
-                 approx: bool = False,
-
-                 waveform: str = 'sin'):
-        
-        self.N = N
-        self.phi = phi
-        self.sigma = sigma
-
-        self.multi = multi
-        self.approx = approx
-
-        if waveform.lower() in ('sin', 'cos'):
-            self.waveform = waveform
-        else:
-            raise ValueError('Waveform must be sin or cos.')
-        
-        
-    def fim(self, A, f):
-        n = tau * np.arange(self.N)
-        if self.approx:
-            fi11 = (n**2).sum() / 2
-            fi12 = (n**1).sum() / 2
-            fi22 = (n**0).sum() / 2
-        elif self.waveform.lower() == 'sin':
-            fi11 = (n**2 * np.cos(f*n + self.phi)**2).sum()
-            fi12 = (n**1 * np.cos(f*n + self.phi)**2).sum()
-            fi22 = (n**0 * np.cos(f*n + self.phi)**2).sum()
-        elif self.waveform.lower() == 'cos':
-            fi11 = (n**2 * np.sin(f*n + self.phi)**2).sum()
-            fi12 = (n**1 * np.sin(f*n + self.phi)**2).sum()
-            fi22 = (n**0 * np.sin(f*n + self.phi)**2).sum()
-        else:
-            raise ValueError
-
-        if self.multi:
-            return (A/self.sigma)**2 * np.array([[fi11, fi12], [fi12, fi22]])
-        elif not self.multi:
-            return (A/self.sigma)**2 * fi11
-        else:
-            raise ValueError
-        
-
-    def crb(self, A, f):
-        matrix = self.fim(A, f)
-        if self.multi:
-            return np.linalg.inv(matrix)[0, 0]
-        elif not self.multi:
-            return 1 / matrix
-        else:
-            raise ValueError
-
-
-    def crb_list(self, A, f_list):
-        return np.array([self.crb(A, f) for f in f_list])
+def ApproxFisherInformation(A_list: np.ndarray, sigma=DI.SIGMA, N=50):
+    n = np.arange(N)
+    results = [2*(A*pi/sigma)**2 * (n**2).sum() for A in A_list]
+    return np.array(results)
 
