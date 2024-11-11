@@ -106,7 +106,9 @@ class MetaData:
     measurement: str
     ground_truth: float
     amplitude: int
+    pwm_duty: int
     timestamp: np.ndarray
+
 
 
 @dataclass
