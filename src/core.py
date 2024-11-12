@@ -135,8 +135,15 @@ class Estimates:
 
     metadata: MetaData = None
 
-    def savez(self, filename):
-        filename = os.path.expanduser(filename)
+    def savez(self, dirname):
+        dirname = os.path.expanduser(dirname)
+        
+        m = self.metadata.measurement
+        px = round(self.metadata.amplitude / DMD.PIXEL_SIZE * 2)
+        f = self.metadata.ground_truth
+        d = self.metadata.pwm_duty
+
+        filename = os.path.join(dirname, f'{m}_{px}px_f{f}_d{d}.npz')
 
         if os.path.exists(filename): 
             raise FileExistsError(f'{filename} already exists')
