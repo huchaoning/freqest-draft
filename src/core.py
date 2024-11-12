@@ -138,7 +138,7 @@ class Estimates:
     def savez(self, dirname):
         dirname = os.path.expanduser(dirname)
         
-        m = self.metadata.measurement
+        m = self.metadata.measurement.lower()
         px = round(self.metadata.amplitude / DMD.PIXEL_SIZE * 2)
         f = self.metadata.ground_truth
         d = self.metadata.pwm_duty
