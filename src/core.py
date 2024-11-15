@@ -1,6 +1,7 @@
 import os
 from math import *
 import numpy as np
+import scipy as sp
 from dataclasses import dataclass
 
 from .estimator import freq_estimator, td_estimator
@@ -19,7 +20,9 @@ __all__ = [
     'FrequencyEstimation',
 
     'FisherInformation',
-    'ApproxFisherInformation'
+    'ApproxFisherInformation',
+
+    'Simulator'
 ]
 
 
@@ -31,8 +34,13 @@ class qCMOS:
     PIXEL_SIZE = 4.6 #um
     CONVERSION_FACTOR = 0.11
     OFFSET = 200
-    QUANTUM_EFFICIENCY = 0.5528
+    QUANTUM_EFFICIENCY_770 = 0.5528 # @770nm
 
+    @classmethod
+    def quantum_efficiency(cls, wavelength):
+        fx = sp.interpolate.interp1d(np.linspace(250, 1100, 8501), 
+                                     np.load(os.path.join(os.path.dirname(__file__), 'quantum_efficiency.npy')))
+        return fx(wavelength)
 
 
 class DMD:
@@ -42,11 +50,17 @@ class DMD:
     TRIANGLE_SEQ = np.concatenate([TRIANGLE_SEQ, TRIANGLE_SEQ[::-1]])
 
 
+class SLM:
+    PIXEL_SIZE = 8 #um
+    RESOLUTION = (1920, 1080)
+
 
 ######################
 #    Measurements    #
 ######################
 class _Share:
+    SIGMA = 103 #um
+
     def __init__(self, raw):
         self.raw = raw.astype(float)
 
@@ -78,8 +92,6 @@ class SPADE(_Share):
 
 
 class DI(_Share):
-    SIGMA = 103 #um
-
     X_AXIS = 86
     CENTER = 113
     
@@ -87,13 +99,19 @@ class DI(_Share):
 
     def __init__(self, raw, amplitude):
         super().__init__(raw)
-        self.amplitude = amplitude
-        self.upper_bound = int(np.ceil(self.CENTER - (2*amplitude + 4*self.SIGMA) / qCMOS.PIXEL_SIZE))
-        self.lower_bound = int(np.ceil(self.CENTER + 4*self.SIGMA / qCMOS.PIXEL_SIZE))
-        self.detectors = self.lower_bound - self.upper_bound
+        (self.lower_bound, self.upper_bound), self.detectors = self.crop_bound(amplitude)
+
 
     def crop(self):
         self.cropped = self.raw[..., self.upper_bound:self.lower_bound, self.X_AXIS]
+
+
+    @classmethod
+    def crop_bound(cls, amplitude):
+        lower_bound = int(np.ceil(cls.CENTER + 4*cls.SIGMA / qCMOS.PIXEL_SIZE))
+        upper_bound = int(np.ceil(cls.CENTER - (2*amplitude + 4*cls.SIGMA) / qCMOS.PIXEL_SIZE))
+        detectors = lower_bound - upper_bound
+        return (lower_bound, upper_bound), detectors
 
 
 
@@ -107,7 +125,7 @@ class MetaData:
     ground_truth: float
     amplitude: int
     pwm_duty: int
-    timestamp: np.ndarray
+    timestamp: np.ndarray = None
 
 
 
@@ -133,7 +151,7 @@ class Estimates:
     noise: np.ndarray
     noise_weight: np.ndarray
 
-    metadata: MetaData = None
+    metadata: MetaData
 
     def savez(self, dirname):
         dirname = os.path.expanduser(dirname)
@@ -223,3 +241,43 @@ def ApproxFisherInformation(A_list: np.ndarray, sigma=DI.SIGMA, N=50):
     results = [2*(A*pi/sigma)**2 * (n**2).sum() for A in A_list]
     return np.array(results)
 
+
+
+#####################
+#     Simulator     #
+#####################
+class Simulator:
+    def __init__(self, metadata: MetaData):
+        self.meta = metadata
+
+
+    def loc(self, n):
+        return self.meta.amplitude * (1 + np.sign(np.sin(tau * self.meta.ground_truth * n + 0.001)))
+
+
+    def gen(self, photons, sample_length=50):
+        if self.meta.measurement.lower() == 'spade':
+            _sig = SPADE.SIGMA
+
+            p1 = lambda s: (s+2*_sig)**2*np.exp(-s**2/(4*_sig**2))/(8*_sig**2)
+            p2 = lambda s: (s-2*_sig)**2*np.exp(-s**2/(4*_sig**2))/(8*_sig**2)
+
+            data = [np.histogram(np.random.uniform(0, 1, photons), 
+                    bins=[0, p1(self.loc(n)), p1(self.loc(n))+p2(self.loc(n))])[0] for n in range(sample_length)]
+
+            return np.array(data).astype(float)
+        
+
+        if self.meta.measurement.lower() == 'di':
+            def _gen_one(n):
+                # Convert length units to camera pixel size to match experimental data.
+                _loc = (self.loc(n) - self.meta.amplitude) / qCMOS.PIXEL_SIZE
+                _sig = DI.SIGMA / qCMOS.PIXEL_SIZE
+
+                (lower_bound, upper_bound), detectors = DI.crop_bound(self.meta.amplitude)
+
+                return np.histogram(np.random.normal(detectors/2+_loc, _sig, photons), 
+                                    bins=detectors, range=(upper_bound, lower_bound))[0]
+                
+
+            return np.array([_gen_one(n) for n in range(sample_length)]).astype(float)
