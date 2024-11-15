@@ -222,7 +222,6 @@ class FrequencyEstimation:
         return c
 
 
-
 ######################
 #     FI and CRB     #
 ######################
