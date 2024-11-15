@@ -11,7 +11,7 @@ def freq_estimator(sample: np.ndarray, sampling_rate=1, method='lse'):
     # sample = (sample - sample.mean()) / sample.std()
 
     def waveform(n, f):
-        return np.sin(tau * f * n / sampling_rate)
+        return np.sin(tau * f * n / sampling_rate + 1e-5 / sampling_rate)
 
     # Use FFT as pre-estimator, if method is fft, retrun FFT estimates.
     def pre_estimator():

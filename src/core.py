@@ -251,7 +251,10 @@ class Simulator:
 
 
     def loc(self, n):
-        return self.meta.amplitude * (1 + np.sign(np.sin(tau * self.meta.ground_truth * n + 0.001)))
+        fs = 20
+        t = n / fs
+        fo = fs * self.meta.ground_truth
+        return self.meta.amplitude * (1 + np.sign(np.sin(tau * fo * (t + 1e-6))))
 
 
     def gen(self, photons, sample_length=50):
@@ -273,10 +276,11 @@ class Simulator:
                 _loc = (self.loc(n) - self.meta.amplitude) / qCMOS.PIXEL_SIZE
                 _sig = DI.SIGMA / qCMOS.PIXEL_SIZE
 
-                (lower_bound, upper_bound), detectors = DI.crop_bound(self.meta.amplitude)
+                # (lower_bound, upper_bound), detectors = DI.crop_bound(self.meta.amplitude)
+                detectors = 500
 
                 return np.histogram(np.random.normal(detectors/2+_loc, _sig, photons), 
-                                    bins=detectors, range=(upper_bound, lower_bound))[0]
+                                    bins=detectors, range=(0, detectors))[0]
                 
 
             return np.array([_gen_one(n) for n in range(sample_length)]).astype(float)
