@@ -136,8 +136,9 @@ class DI(_Share):
 class MetaData:
     measurement: str
     ground_truth: float
-    amplitude: int
+    amplitude: int | float
     pwm_duty: int
+    sampling_rate: int | float
     timestamp: np.ndarray = None
 
 
@@ -263,7 +264,7 @@ class Simulator:
 
 
     def loc(self, n):
-        fs = 20
+        fs = self.meta.sampling_rate
         t = n / fs
         fo = fs * self.meta.ground_truth
         return self.meta.amplitude * (1 + np.sign(np.sin(tau * fo * (t + 1e-6))))
@@ -273,8 +274,8 @@ class Simulator:
         if self.meta.measurement.lower() == 'spade':
             _sig = SPADE.SIGMA
 
-            p1 = lambda s: (s+2*_sig)**2*np.exp(-s**2/(4*_sig**2))/(8*_sig**2)
-            p2 = lambda s: (s-2*_sig)**2*np.exp(-s**2/(4*_sig**2))/(8*_sig**2)
+            p1 = lambda s: (s-2*_sig)**2*np.exp(-s**2/(4*_sig**2))/(8*_sig**2)
+            p2 = lambda s: (s+2*_sig)**2*np.exp(-s**2/(4*_sig**2))/(8*_sig**2)
 
             data = [np.histogram(np.random.uniform(0, 1, photons), 
                     bins=[0, p1(self.loc(n)), p1(self.loc(n))+p2(self.loc(n))])[0] for n in range(sample_length)]
