@@ -6,37 +6,29 @@ from scipy.optimize import curve_fit, minimize
 __all__ = ['freq_estimator', 'td_estimator']
 
 
-def freq_estimator(sample: np.ndarray, sampling_rate=1, method='lse'):
-    # Standardize sample
-    # sample = (sample - sample.mean()) / sample.std()
-
+def freq_estimator(sample: np.ndarray, method='lse'):
     def waveform(n, f):
-        return np.sin(tau * f * n / sampling_rate + 1e-5 / sampling_rate)
+        return np.sin(tau * f * n)
 
     # Use FFT as pre-estimator, if method is fft, retrun FFT estimates.
-    def pre_estimator():
-        l = len(sample)
+    l = len(sample)
 
-        fft = np.fft.fft(sample)[:l // 2]
-        freq = np.fft.fftfreq(l, 1)[:l // 2]
+    fft = np.abs(np.fft.fft(sample)[:l // 2])
+    freq = np.fft.fftfreq(l, 1)[:l // 2]
 
-        amplitude = np.abs(fft)
-
-        peak_index = np.argmax(amplitude[1:]) + 1
-        pre_freq_est = freq[peak_index]
-
-        return pre_freq_est
+    peak_index = np.argmax(fft[1:]) + 1
+    pre_freq_est = freq[peak_index]
 
 
     if method.lower() == 'fft':
-        return pre_estimator()
+        return pre_freq_est
 
 
     elif method.lower() == 'lse':
         # Use LSE as frequency estimator. 
         # Note that LSE and MLE are the same in WGN.
         n = np.arange(len(sample), dtype=np.float64)
-        popt, _= curve_fit(f=waveform, xdata=n, ydata=sample, p0=pre_estimator())
+        popt, _= curve_fit(f=waveform, xdata=n, ydata=sample, p0=pre_freq_est)
         return popt.item()
 
     else:
@@ -46,7 +38,7 @@ def freq_estimator(sample: np.ndarray, sampling_rate=1, method='lse'):
 
 
 
-def td_estimator(measurement, sample: np.ndarray, w=None, method='mle'):
+def td_estimator(measurement, sample: np.ndarray, w=None, di_method='mle'):
         from .core import DI, qCMOS
 
         origin_shape = sample.shape
@@ -63,12 +55,12 @@ def td_estimator(measurement, sample: np.ndarray, w=None, method='mle'):
 
         elif measurement.lower() == 'di':
 
-            if method.lower() == 'simple':
+            if di_method.lower() == 'simple':
                 temp = flatten_data / flatten_data.sum(axis=-1).reshape(-1, 1)
                 x_axis = np.arange(detectors)
                 time_domain = (temp @ x_axis)
 
-            elif method.lower() == 'mle':
+            elif di_method.lower() == 'mle':
                 def _p(x, s, w):
                     _sigma = DI.SIGMA / qCMOS.PIXEL_SIZE
                     return (1-w)/np.sqrt(tau*_sigma**2)*np.exp(-(x-s)**2/(2*_sigma**2)) + w/detectors
@@ -79,7 +71,7 @@ def td_estimator(measurement, sample: np.ndarray, w=None, method='mle'):
 
                 def _run_mle(data, w):
                     # Use BFGS algorithm to minimize negative log-likelihood function.
-                    result = minimize(_nll(data, w), x0=detectors/2, method='BFGS')
+                    result = minimize(_nll(data, w), x0=detectors/2)
                     
                     if result.success:
                         return result.x[0]
@@ -93,6 +85,7 @@ def td_estimator(measurement, sample: np.ndarray, w=None, method='mle'):
                     time_domain = [_run_mle(flatten_data[i], w_set[i]) for i in range(works)]
 
 
+        # Standardize
         time_domain = np.array(time_domain)
         std = time_domain.std()
         mean = time_domain.mean()

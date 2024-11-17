@@ -2,6 +2,8 @@ import os
 from math import *
 import numpy as np
 import scipy as sp
+import gc
+
 from dataclasses import dataclass
 
 from .estimator import freq_estimator, td_estimator
@@ -10,6 +12,7 @@ from .estimator import freq_estimator, td_estimator
 __all__ = [
     'qCMOS',
     'DMD',
+    'SLM',
 
     'SPADE',
     'DI',
@@ -60,22 +63,39 @@ class SLM:
 ######################
 class _Share:
     SIGMA = 103 #um
+    def __init__(self, raw=None, cropped=None, noise=None):
+        if raw is not None:
+            self.raw = raw.astype(float)
 
-    def __init__(self, raw):
-        self.raw = raw.astype(float)
+            temp = self.raw[..., :-4, :]
+            self.noise = (temp[..., :5,   :5].mean((-1, -2)) + temp[..., -5:,   :5].mean((-1, -2))  + 
+                          temp[..., :5, -5: ].mean((-1, -2)) + temp[..., -5:, -5: ].mean((-1, -2))) / 4
+            del raw, temp
+            self.crop()
 
-        temp = self.raw[..., :-4, :]
-        self.noise = (temp[..., :5,   :5].mean((-1, -2)) + temp[..., -5:,   :5].mean((-1, -2))  + 
-                      temp[..., :5, -5: ].mean((-1, -2)) + temp[..., -5:, -5: ].mean((-1, -2))) / 4
-        del raw, temp
+        elif (cropped is not None) and (noise is not None):
+            self.cropped = cropped
+            self.noise = noise
+        
+        else:
+            raise ValueError('When raw is not given, cropped and noise must be given. When raw is given, cropped and noise will be ignored.')
 
-    def est_all(self):
-        self.crop()
+
+    def est_all(self, metadata):
         self.pn = ((self.cropped - qCMOS.OFFSET).sum(-1)) * qCMOS.CONVERSION_FACTOR
         self.w = self.noise / self.cropped.mean(-1)
         self.td = td_estimator(self.__class__.__name__, self.cropped)
         self.lse = np.array([freq_estimator(sample) for sample in self.td])
 
+        self.estimates = Estimates( cropped_data = self.cropped, 
+                                    metadata = metadata,
+
+                                    frequency_estimates = self.lse,
+                                    time_domain = self.td, 
+                                    photons = self.pn, 
+
+                                    noise = self.noise,
+                                    noise_weight = self.w)
 
 
 
@@ -97,22 +117,15 @@ class DI(_Share):
     
     ROI = {'X0': 1440, 'Y0': 876, 'W': 160, 'H': 228}
 
-    def __init__(self, raw, amplitude):
-        super().__init__(raw)
-        (self.lower_bound, self.upper_bound), self.detectors = self.crop_bound(amplitude)
+    def __init__(self, amplitude, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.lower_bound = int(np.ceil(self.CENTER + 4*self.SIGMA / qCMOS.PIXEL_SIZE))
+        self.upper_bound = int(np.ceil(self.CENTER - (2*amplitude + 4*self.SIGMA) / qCMOS.PIXEL_SIZE))
+        self.detectors = self.lower_bound - self.upper_bound
 
 
     def crop(self):
         self.cropped = self.raw[..., self.upper_bound:self.lower_bound, self.X_AXIS]
-
-
-    @classmethod
-    def crop_bound(cls, amplitude):
-        lower_bound = int(np.ceil(cls.CENTER + 4*cls.SIGMA / qCMOS.PIXEL_SIZE))
-        upper_bound = int(np.ceil(cls.CENTER - (2*amplitude + 4*cls.SIGMA) / qCMOS.PIXEL_SIZE))
-        detectors = lower_bound - upper_bound
-        return (lower_bound, upper_bound), detectors
-
 
 
 
@@ -141,17 +154,16 @@ class Estimates:
 
         The `noise_weight` is just for MLE needs.
     '''
-
-    frequency_estimates: np.ndarray
-
     cropped_data: np.ndarray
-    time_domain: np.ndarray
-    photons: np.ndarray
-
-    noise: np.ndarray
-    noise_weight: np.ndarray
-
     metadata: MetaData
+
+    frequency_estimates: np.ndarray = None
+    time_domain: np.ndarray = None
+    photons: np.ndarray = None
+
+    noise: np.ndarray = None
+    noise_weight: np.ndarray = None
+
 
     def savez(self, dirname):
         dirname = os.path.expanduser(dirname)
@@ -192,40 +204,40 @@ class FrequencyEstimation:
         if metadata.measurement.upper() == 'SPADE':
             expt = SPADE(raw)
         elif metadata.measurement.upper() == 'DI':
-            expt = DI(raw, metadata.amplitude)
+            expt = DI(metadata.amplitude, raw)
         else:
             raise ValueError
         
         del raw
-        expt.est_all()
-        return Estimates(frequency_estimates = expt.lse,
 
-                         cropped_data = expt.cropped, 
-                         time_domain = expt.td, 
-                         photons = expt.pn, 
+        gc.collect()
+        expt.est_all(metadata)
+        return expt.estimates
 
-                         noise = expt.noise,
-                         noise_weight = expt.w,
-                    
-                         metadata = metadata)
-    
+
     @classmethod
     def FromEstimates(cls, Estimates_instance: Estimates):
         c: Estimates = np.copy(Estimates_instance).item()
+        del Estimates_instance
 
-        c.photons = (c.cropped_data - qCMOS.OFFSET).sum(-1) * qCMOS.CONVERSION_FACTOR
-        c.noise_weight = c.noise / (c.cropped_data - qCMOS.OFFSET).mean(-1) * qCMOS.CONVERSION_FACTOR
+        if c.metadata.measurement.upper() == 'SPADE':
+            expt = SPADE(cropped=c.cropped_data, noise=c.noise)
+        elif c.metadata.measurement.upper() == 'DI':
+            expt = DI(amplitude=c.metadata.amplitude, cropped=c.cropped_data, noise=c.noise)
+        else:
+            raise ValueError
 
-        c.time_domain = td_estimator(c.metadata.measurement, c.cropped_data, c.noise_weight)
-        c.frequency_estimates = np.array([freq_estimator(sample) for sample in c.time_domain])
+        gc.collect()
+        expt.est_all(c.metadata)
+        return expt.estimates
 
-        return c
+
 
 
 ######################
 #     FI and CRB     #
 ######################
-def FisherInformation(A_list: np.ndarray, freq_list: np.ndarray, sigma=DI.SIGMA, N=50):
+def FisherInformation(A_list: np.ndarray, freq_list: np.ndarray, sigma=_Share.SIGMA, N=50):
     results_1, results_2 = [], []
     n = np.arange(N)
     for A in A_list:
@@ -235,7 +247,7 @@ def FisherInformation(A_list: np.ndarray, freq_list: np.ndarray, sigma=DI.SIGMA,
         results_2.append(results_1)
     return np.array(results_2)
 
-def ApproxFisherInformation(A_list: np.ndarray, sigma=DI.SIGMA, N=50):
+def ApproxFisherInformation(A_list: np.ndarray, sigma=_Share.SIGMA, N=50):
     n = np.arange(N)
     results = [2*(A*pi/sigma)**2 * (n**2).sum() for A in A_list]
     return np.array(results)
