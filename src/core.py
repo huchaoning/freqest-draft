@@ -259,15 +259,21 @@ def ApproxFisherInformation(A_list: np.ndarray, sigma=_Share.SIGMA, N=50):
 #     Simulator     #
 #####################
 class Simulator:
-    def __init__(self, metadata: MetaData):
+    def __init__(self, metadata: MetaData, wavefrom = 'sign'):
         self.meta = metadata
+        self.wavefrom = wavefrom
 
 
     def loc(self, n):
         fs = self.meta.sampling_rate
         t = n / fs
         fo = fs * self.meta.ground_truth
-        return self.meta.amplitude * (1 + np.sign(np.sin(tau * fo * (t + 1e-6))))
+        if self.wavefrom.lower() == 'sign':
+            return self.meta.amplitude * (1 + np.sign(np.sin(tau * fo * (t + 1e-6))))
+        elif self.wavefrom.lower() == 'sin':
+            return self.meta.amplitude * (1 + np.sin(tau * fo * (t + 1e-6)))
+        else:
+            raise ValueError('wavefrom must be sign or sin')
 
 
     def gen(self, photons, sample_length=50):

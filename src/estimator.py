@@ -38,8 +38,8 @@ def freq_estimator(sample: np.ndarray, method='lse'):
 
 
 
-def td_estimator(measurement, sample: np.ndarray, w=None, di_method='mle'):
-        from .core import DI, qCMOS
+def td_estimator(measurement, sample: np.ndarray, w=None, di_method='mle', spade_method='sub'):
+        from .core import DI, SPADE, qCMOS
 
         origin_shape = sample.shape
 
@@ -50,7 +50,11 @@ def td_estimator(measurement, sample: np.ndarray, w=None, di_method='mle'):
 
 
         if measurement.lower() == 'spade':
-            time_domain = sample[..., 1] - sample[..., 0]
+            if spade_method.lower() == 'sub':
+                time_domain = sample[..., 1] - sample[..., 0]
+            elif spade_method.lower() == 'zhou2023':
+                k = sample[..., 0] / sample[..., 1]
+                time_domain = 2*SPADE.SIGMA * (1-np.sqrt(k)) / (1+np.sqrt(k))
 
 
         elif measurement.lower() == 'di':
