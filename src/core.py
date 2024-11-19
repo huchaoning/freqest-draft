@@ -138,7 +138,7 @@ class MetaData:
     ground_truth: float
     amplitude: int | float
     pwm_duty: int
-    sampling_rate: int | float
+    # sampling_rate: int | float
     timestamp: np.ndarray = None
 
 
@@ -259,13 +259,14 @@ def ApproxFisherInformation(A_list: np.ndarray, sigma=_Share.SIGMA, N=50):
 #     Simulator     #
 #####################
 class Simulator:
-    def __init__(self, metadata: MetaData, wavefrom = 'sign'):
+    def __init__(self, metadata: MetaData, wavefrom = 'sign', sampling_rate=20):
         self.meta = metadata
         self.wavefrom = wavefrom
+        self.sampling_rate = sampling_rate
 
 
     def loc(self, n):
-        fs = self.meta.sampling_rate
+        fs = self.sampling_rate
         t = n / fs
         fo = fs * self.meta.ground_truth
         if self.wavefrom.lower() == 'sign':
