@@ -37,8 +37,7 @@ def freq_estimator(sample: np.ndarray, method='lse'):
 
 
 
-
-def td_estimator(measurement, sample: np.ndarray, w=None, di_method='mle', spade_method='sub'):
+def td_estimator(measurement, sample: np.ndarray, w=None, di_method='mle', spade_method='sub', standardize=True):
         from .core import DI, SPADE, qCMOS
 
         origin_shape = sample.shape
@@ -55,6 +54,7 @@ def td_estimator(measurement, sample: np.ndarray, w=None, di_method='mle', spade
             elif spade_method.lower() == 'zhou2023':
                 k = sample[..., 0] / sample[..., 1]
                 time_domain = 2*SPADE.SIGMA * (1-np.sqrt(k)) / (1+np.sqrt(k))
+                time_domain[np.isnan(time_domain)] = -2*SPADE.SIGMA 
 
 
         elif measurement.lower() == 'di':
@@ -88,10 +88,12 @@ def td_estimator(measurement, sample: np.ndarray, w=None, di_method='mle', spade
                     w_set = np.ravel(w)
                     time_domain = [_run_mle(flatten_data[i], w_set[i]) for i in range(works)]
 
-
-        # Standardize
         time_domain = np.array(time_domain)
-        std = time_domain.std()
-        mean = time_domain.mean()
-
-        return ((time_domain - mean) / std).reshape(*origin_shape[:-1])
+        
+        if standardize:
+            # Standardize
+            std = time_domain.std()
+            mean = time_domain.mean()
+            return ((time_domain - mean) / std).reshape(*origin_shape[:-1])
+        else:
+            return time_domain
