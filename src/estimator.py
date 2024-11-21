@@ -107,4 +107,4 @@ def td_estimator(measurement, sample: np.ndarray, w=None, di_method='mle', spade
             mean = time_domain.mean()
             return ((time_domain - mean) / std).reshape(*origin_shape[:-1])
         else:
-            return time_domain.reshape(*origin_shape[:-1])
+            return time_domain.reshape(*origin_shape[:-1]) * [qCMOS.PIXEL_SIZE if measurement.lower() == 'DI' else 1][0]

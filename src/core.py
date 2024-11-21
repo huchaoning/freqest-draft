@@ -87,8 +87,6 @@ class _Share:
         self.w = self.noise / self.cropped.mean(-1)
         if self.velocity:
             self.td = td_estimator(self.__class__.__name__, self.cropped, standardize=False, spade_method='zhou2023')
-            if self.__class__.__name__ == 'DI':
-                self.td = self.td * qCMOS.PIXEL_SIZE
             _result = np.array([velocity_estimator(sample) for sample in self.td])
             self.v, self.b = _result[:, 0], _result[:, 1]
             self.lse = None
