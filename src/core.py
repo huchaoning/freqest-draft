@@ -86,12 +86,12 @@ class _Share:
         self.pn = ((self.cropped - qCMOS.OFFSET).sum(-1)) * qCMOS.CONVERSION_FACTOR
         self.w = self.noise / self.cropped.mean(-1)
         if self.velocity:
-            self.td = td_estimator(self.__class__.__name__, self.cropped, standardize=False, spade_method='zhou2023')
+            self.td = td_estimator(self.__class__.__name__, self.cropped, self.w, standardize=False, spade_method='zhou2023')
             _result = np.array([velocity_estimator(sample) for sample in self.td])
             self.v, self.b = _result[:, 0], _result[:, 1]
             self.lse = None
         elif not self.velocity:
-            self.td = td_estimator(self.__class__.__name__, self.cropped)
+            self.td = td_estimator(self.__class__.__name__, self.cropped, self.w)
             self.lse = np.array([freq_estimator(sample) for sample in self.td])
             self.v, self.b = None, None
         else:
@@ -157,7 +157,7 @@ class MetaData:
     measurement: str
     ground_truth: float
     amplitude: float = None
-    pwm_duty: int = None
+    pwm_duty: int = 0
     timestamp: np.ndarray = None
 
 
@@ -190,13 +190,16 @@ class Estimates:
 
     def savez(self, dirname):
         dirname = os.path.expanduser(dirname)
-        
+        truth = self.metadata.ground_truth
+
         m = self.metadata.measurement.lower()
-        px = round(self.metadata.amplitude / DMD.PIXEL_SIZE * 2)
-        f = self.metadata.ground_truth
         d = self.metadata.pwm_duty
 
-        filename = os.path.join(dirname, f'{m}_{px}px_f{f}_d{d}.npz')
+        if self.frequency_estimates is not None:
+            px = round(self.metadata.amplitude / DMD.PIXEL_SIZE * 2)
+            filename = os.path.join(dirname, f'{m}_{px}px_f{truth}_d{d}.npz')
+        elif self.velocity_estimates is not None:
+            filename = os.path.join(dirname, f'{m}_v{truth}_d{d}.npz')
 
         if os.path.exists(filename): 
             raise FileExistsError(f'{filename} already exists')
