@@ -6,6 +6,12 @@ from scipy.optimize import curve_fit, minimize
 __all__ = ['freq_estimator', 'td_estimator']
 
 
+class _LSE:
+    def __init__(self) -> None:
+        pass
+
+
+
 def freq_estimator(sample: np.ndarray, method='lse'):
     def waveform(n, f):
         return np.sin(tau * f * n)

@@ -117,11 +117,18 @@ class DI(_Share):
     
     ROI = {'X0': 1440, 'Y0': 876, 'W': 160, 'H': 228}
 
-    def __init__(self, amplitude, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.lower_bound = int(np.ceil(self.CENTER + 4*self.SIGMA / qCMOS.PIXEL_SIZE))
-        self.upper_bound = int(np.ceil(self.CENTER - (2*amplitude + 4*self.SIGMA) / qCMOS.PIXEL_SIZE))
+    def __init__(self, *args, amplitude=None, velocity=False, **kwargs):
+        if not velocity and amplitude is not None:
+            self.lower_bound = int(np.ceil(self.CENTER + 4*self.SIGMA / qCMOS.PIXEL_SIZE))
+            self.upper_bound = int(np.ceil(self.CENTER - (2*amplitude + 4*self.SIGMA) / qCMOS.PIXEL_SIZE))  
+        elif velocity:
+            self.lower_bound = int(np.ceil(self.CENTER + (5*DMD.PIXEL_SIZE + 4*self.SIGMA) / qCMOS.PIXEL_SIZE))
+            self.upper_bound = int(np.ceil(self.CENTER - (5*DMD.PIXEL_SIZE + 4*self.SIGMA) / qCMOS.PIXEL_SIZE))
+        else: 
+            raise ValueError('When velocity is False (default), amplitude must be given. When velocity is True, amplitude will be ignored.')
+
         self.detectors = self.lower_bound - self.upper_bound
+        super().__init__(*args, **kwargs)
 
 
     def crop(self):
@@ -136,8 +143,8 @@ class DI(_Share):
 class MetaData:
     measurement: str
     ground_truth: float
-    amplitude: (int, float)
-    pwm_duty: int
+    amplitude: (int, float) = None
+    pwm_duty: int = None
     timestamp: np.ndarray = None
 
 
