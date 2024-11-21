@@ -6,7 +6,7 @@ import gc
 
 from dataclasses import dataclass
 
-from .estimator import freq_estimator, td_estimator
+from .estimator import *
 
 
 __all__ = [
@@ -63,7 +63,8 @@ class SLM:
 ######################
 class _Share:
     SIGMA = 103 #um
-    def __init__(self, raw=None, cropped=None, noise=None):
+    def __init__(self, raw=None, cropped=None, noise=None, velocity=False):
+        self.velocity = velocity
         if raw is not None:
             self.raw = raw.astype(float)
 
@@ -84,13 +85,27 @@ class _Share:
     def est_all(self, metadata):
         self.pn = ((self.cropped - qCMOS.OFFSET).sum(-1)) * qCMOS.CONVERSION_FACTOR
         self.w = self.noise / self.cropped.mean(-1)
-        self.td = td_estimator(self.__class__.__name__, self.cropped)
-        self.lse = np.array([freq_estimator(sample) for sample in self.td])
+        if self.velocity:
+            self.td = td_estimator(self.__class__.__name__, self.cropped, standardize=False, spade_method='zhou2023')
+            if self.__class__.__name__ == 'DI':
+                self.td = self.td * qCMOS.PIXEL_SIZE
+            _result = np.array([velocity_estimator(sample) for sample in self.td])
+            self.v, self.b = _result[:, 0], _result[:, 1]
+            self.lse = None
+        elif not self.velocity:
+            self.td = td_estimator(self.__class__.__name__, self.cropped)
+            self.lse = np.array([freq_estimator(sample) for sample in self.td])
+            self.v, self.b = None, None
+        else:
+            ValueError('set velocity as False (default) to estimate the frequency')
 
         self.estimates = Estimates( cropped_data = self.cropped, 
                                     metadata = metadata,
-
+           
                                     frequency_estimates = self.lse,
+                                    velocity_estimates = self.v,
+                                    start_point_estimates = self.b,
+
                                     time_domain = self.td, 
                                     photons = self.pn, 
 
@@ -128,7 +143,7 @@ class DI(_Share):
             raise ValueError('When velocity is False (default), amplitude must be given. When velocity is True, amplitude will be ignored.')
 
         self.detectors = self.lower_bound - self.upper_bound
-        super().__init__(*args, **kwargs)
+        super().__init__(velocity=velocity, *args, **kwargs)
 
 
     def crop(self):
@@ -143,7 +158,7 @@ class DI(_Share):
 class MetaData:
     measurement: str
     ground_truth: float
-    amplitude: (int, float) = None
+    amplitude: float = None
     pwm_duty: int = None
     timestamp: np.ndarray = None
 
@@ -165,6 +180,9 @@ class Estimates:
     metadata: MetaData
 
     frequency_estimates: np.ndarray = None
+    velocity_estimates: np.ndarray = None
+    start_point_estimates: np.ndarray = None
+
     time_domain: np.ndarray = None
     photons: np.ndarray = None
 
@@ -211,7 +229,7 @@ class FrequencyEstimation:
         if metadata.measurement.upper() == 'SPADE':
             expt = SPADE(raw)
         elif metadata.measurement.upper() == 'DI':
-            expt = DI(metadata.amplitude, raw)
+            expt = DI(raw, amplitude=metadata.amplitude)
         else:
             raise ValueError
         

@@ -3,12 +3,17 @@ import numpy as np
 from scipy.optimize import curve_fit, minimize
 
 
-__all__ = ['freq_estimator', 'td_estimator']
+__all__ = ['velocity_estimator', 'freq_estimator', 'td_estimator']
 
 
-class _LSE:
-    def __init__(self) -> None:
-        pass
+def velocity_estimator(sample: np.ndarray, sampling_rate=20):
+    def waveform(t, v, b):
+        return v * t + b
+
+    l = len(sample)
+
+    (v_est, b_est), _ = curve_fit(waveform, np.arange(l)/sampling_rate, sample, p0=[0, 0])
+    return v_est, b_est
 
 
 
@@ -58,7 +63,7 @@ def td_estimator(measurement, sample: np.ndarray, w=None, di_method='mle', spade
             if spade_method.lower() == 'sub':
                 time_domain = sample[..., 1] - sample[..., 0]
             elif spade_method.lower() == 'zhou2023':
-                k = sample[..., 0] / sample[..., 1]
+                k = (sample[..., 0] - qCMOS.OFFSET) / (sample[..., 1] - qCMOS.OFFSET)
                 time_domain = 2*SPADE.SIGMA * (1-np.sqrt(k)) / (1+np.sqrt(k))
                 time_domain[np.isnan(time_domain)] = -2*SPADE.SIGMA 
 
@@ -102,4 +107,4 @@ def td_estimator(measurement, sample: np.ndarray, w=None, di_method='mle', spade
             mean = time_domain.mean()
             return ((time_domain - mean) / std).reshape(*origin_shape[:-1])
         else:
-            return time_domain
+            return time_domain.reshape(*origin_shape[:-1])
