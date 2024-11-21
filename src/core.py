@@ -136,9 +136,8 @@ class DI(_Share):
 class MetaData:
     measurement: str
     ground_truth: float
-    amplitude: int | float
+    amplitude: (int, float)
     pwm_duty: int
-    # sampling_rate: int | float
     timestamp: np.ndarray = None
 
 
