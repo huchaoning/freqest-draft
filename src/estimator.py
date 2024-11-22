@@ -96,8 +96,8 @@ def td_estimator(measurement, sample: np.ndarray, w=None, di_method='mle', spade
                 if w is None:
                     time_domain = [_run_mle(flatten_data[i], 0) for i in range(works)]
                 else:
-                    w_set = np.ravel(w)
-                    time_domain = [_run_mle(flatten_data[i], w_set[i]) for i in range(works)]
+                    # w_set = np.ravel(w)
+                    time_domain = [_run_mle(flatten_data[i], w.mean()) for i in range(works)]
 
         time_domain = np.array(time_domain)
         
