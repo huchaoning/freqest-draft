@@ -11,6 +11,7 @@ from matplotlib.font_manager import fontManager
 fontManager.addfont('src/lmroman10.otf')
 del fontManager
 
+plt.rcdefaults()
 plt.rcParams['font.family'] = 'Latin Modern Roman'
 plt.rcParams['mathtext.fontset'] = 'cm'
 
