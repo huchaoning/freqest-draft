@@ -20,7 +20,7 @@ __all__ = [
     'MetaData',
     'Estimates',
     'LoadEstimates',
-    'FrequencyEstimation',
+    'Estimation',
 
     'FisherInformation',
     'ApproxFisherInformation',
@@ -86,7 +86,7 @@ class _Share:
         self.pn = ((self.cropped - qCMOS.OFFSET).sum(-1)) * qCMOS.CONVERSION_FACTOR
         self.w = self.noise / self.cropped.mean(-1)
         if self.velocity:
-            self.td = td_estimator(self.__class__.__name__, self.cropped, self.w, standardize=False, spade_method='zhou2023')
+            self.td = td_estimator(self.__class__.__name__, self.cropped, self.w, standardize=False, spade_method='mle')
             _result = np.array([velocity_estimator(sample) for sample in self.td])
             self.v, self.b = _result[:, 0], _result[:, 1]
             self.lse = None
@@ -234,13 +234,13 @@ def LoadEstimates(file):
 
 
 
-class FrequencyEstimation:
+class Estimation:
     @classmethod
-    def FromRaw(cls, raw: np.ndarray, metadata: MetaData):
+    def FromRaw(cls, raw: np.ndarray, metadata: MetaData, velocity=False):
         if metadata.measurement.upper() == 'SPADE':
-            expt = SPADE(raw)
+            expt = SPADE(raw, velocity=velocity)
         elif metadata.measurement.upper() == 'DI':
-            expt = DI(raw, amplitude=metadata.amplitude)
+            expt = DI(raw, amplitude=metadata.amplitude, velocity=velocity)
         else:
             raise ValueError
         
@@ -255,11 +255,12 @@ class FrequencyEstimation:
     def FromEstimates(cls, Estimates_instance: Estimates):
         c: Estimates = np.copy(Estimates_instance).item()
         del Estimates_instance
+        velocity = True if c.metadata.amplitude is None else False
 
         if c.metadata.measurement.upper() == 'SPADE':
-            expt = SPADE(cropped=c.cropped_data, noise=c.noise)
+            expt = SPADE(cropped=c.cropped_data, noise=c.noise, velocity=velocity)
         elif c.metadata.measurement.upper() == 'DI':
-            expt = DI(amplitude=c.metadata.amplitude, cropped=c.cropped_data, noise=c.noise)
+            expt = DI(amplitude=c.metadata.amplitude, cropped=c.cropped_data, noise=c.noise, velocity=velocity)
         else:
             raise ValueError
 
@@ -327,7 +328,10 @@ class Simulator:
         fo = fs * self.meta.ground_truth
 
         if self.waveform.lower() == 'sign':
-            return self.meta.amplitude * (1 + np.sign(np.sin(tau * fo * (t + 1e-6 + self.delay))))
+            _k = np.sign(np.sin(tau * fo * (t + 1e-6 + self.delay)))
+            if _k == 0:
+                _k = 1
+            return self.meta.amplitude * (1 + _k)
         elif self.waveform.lower() == 'sin':
             return self.meta.amplitude * (1 + np.sin(tau * fo * (t + 1e-6 + self.delay)))
         elif self.waveform.lower() == 'linear':
@@ -376,4 +380,5 @@ class Simulator:
 
             data = np.array([_gen_one(n) for n in range(sample_length)]).astype(float)
 
-        return data + np.random.poisson(noise, size=data.shape)
+        noise = np.random.poisson(noise, size=data.shape)
+        return (data + noise)/qCMOS.CONVERSION_FACTOR + qCMOS.OFFSET, (noise)/qCMOS.CONVERSION_FACTOR + qCMOS.OFFSET
