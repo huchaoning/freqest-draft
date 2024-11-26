@@ -90,7 +90,7 @@ def _spade_td(sample: np.ndarray, w: np.ndarray, method: str):
     elif method == 'zhou2023':
         # If the ADU value is less than the qCMOS offset, means the signal here is zero.
         # Add a small offset to avoid division by zero errors.
-        _sample = np.clip(sample - qCMOS.OFFSET, 0) + 1e-12
+        _sample = np.clip(sample - qCMOS.OFFSET, 0, np.inf) + 1e-12
         k = _sample[..., 0] / _sample[..., 1]
         time_domain = 2 * SPADE.SIGMA * (1 - np.sqrt(k)) / (1 + np.sqrt(k))
         return time_domain
