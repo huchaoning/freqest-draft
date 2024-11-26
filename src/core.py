@@ -154,6 +154,16 @@ class DI(_Share):
 ######################
 @dataclass
 class MetaData:
+    '''
+    Data class to store metadata for measurements.
+
+    Parameters:
+        measurement (str): The type of measurement, 'SPADE' or 'DI'.
+        ground_truth (float): The ground truth value, frequency (frames/s) or velocity (um/s).
+        amplitude (float, optional): The amplitude value. Keep it None if estimating velocity.
+        pwm_duty (int, optional): The PWM duty cycle. Defaults to 0.
+        timestamp (np.ndarray, optional): Keep it None if simulating.
+    '''
     measurement: str
     ground_truth: float
     amplitude: float = None
@@ -278,31 +288,69 @@ def ApproxFisherInformation(A_list: np.ndarray, sigma=_Share.SIGMA, N=50):
     results = [2*(A*pi/sigma)**2 * (n**2).sum() for A in A_list]
     return np.array(results)
 
+def VelocityFisherInformationMatrix(sampling_rate=20, sigma=_Share.SIGMA, N=10):
+    t = np.arange(N)/sampling_rate
+    fi11 = 1/sigma**2 * np.sum(t**2)
+    fi12 = 1/sigma**2 * np.sum(t**1)
+    fi22 = 1/sigma**2 * np.sum(t**0)
+    return np.array([[fi11, fi12], [fi12, fi22]])
+
 
 
 #####################
 #     Simulator     #
 #####################
 class Simulator:
-    def __init__(self, metadata: MetaData, wavefrom = 'sign', sampling_rate=20):
+    def __init__(self, 
+                 metadata: MetaData, 
+                 waveform: str = 'sign',
+                 sampling_rate = 20, 
+                 delay = 0):
+        ''' 
+        Parameters:
+            metadata (MetaData): MetaData instance
+            waveform (str): 'sign', 'sin', or 'linear', 
+            sampling_rate (int): default is 20 Hz
+            delay (float): default is 0
+        '''
+
         self.meta = metadata
-        self.wavefrom = wavefrom
+        self.waveform = waveform
         self.sampling_rate = sampling_rate
+        self.delay = delay
 
 
     def loc(self, n):
+
         fs = self.sampling_rate
         t = n / fs
         fo = fs * self.meta.ground_truth
-        if self.wavefrom.lower() == 'sign':
-            return self.meta.amplitude * (1 + np.sign(np.sin(tau * fo * (t + 1e-6))))
-        elif self.wavefrom.lower() == 'sin':
-            return self.meta.amplitude * (1 + np.sin(tau * fo * (t + 1e-6)))
+
+        if self.waveform.lower() == 'sign':
+            return self.meta.amplitude * (1 + np.sign(np.sin(tau * fo * (t + 1e-6 + self.delay))))
+        elif self.waveform.lower() == 'sin':
+            return self.meta.amplitude * (1 + np.sin(tau * fo * (t + 1e-6 + self.delay)))
+        elif self.waveform.lower() == 'linear':
+            return self.meta.ground_truth * (t + 1e-6 + self.delay) - 5 * DMD.PIXEL_SIZE
         else:
-            raise ValueError('wavefrom must be sign or sin')
+            raise ValueError('waveform must be sign or sin')
 
 
-    def gen(self, photons, sample_length=50):
+    def gen(self, photons=None, noise=0, sample_length=None):
+        '''
+        Generate simulated data using a statistical histogram method.
+
+        Parameters:
+            photons (int): Number of photons to generate for each sample, default is 400 (DI) or 60 (SPADE).
+            noise (int): The lambda parameter of the poisson, default is 0.
+            sample_length (int): Length of the generated data, default is 50.
+
+        Returns:
+            np.ndarray: Simulated data array.
+        '''
+        photons = photons or (400 if self.meta.measurement.lower() == 'di' else 60)
+        sample_length = sample_length or (10 if self.waveform.lower() == 'linear' else 50)
+
         if self.meta.measurement.lower() == 'spade':
             _sig = SPADE.SIGMA
 
@@ -311,14 +359,13 @@ class Simulator:
 
             data = [np.histogram(np.random.uniform(0, 1, photons), 
                     bins=[0, p1(self.loc(n)), p1(self.loc(n))+p2(self.loc(n))])[0] for n in range(sample_length)]
-
-            return np.array(data).astype(float)
-        
+            
+            data = np.array(data).astype(float)
 
         if self.meta.measurement.lower() == 'di':
             def _gen_one(n):
                 # Convert length units to camera pixel size to match experimental data.
-                _loc = (self.loc(n) - self.meta.amplitude) / qCMOS.PIXEL_SIZE
+                _loc = self.loc(n) / qCMOS.PIXEL_SIZE
                 _sig = DI.SIGMA / qCMOS.PIXEL_SIZE
 
                 # (lower_bound, upper_bound), detectors = DI.crop_bound(self.meta.amplitude)
@@ -326,6 +373,7 @@ class Simulator:
 
                 return np.histogram(np.random.normal(detectors/2+_loc, _sig, photons), 
                                     bins=detectors, range=(0, detectors))[0]
-                
 
-            return np.array([_gen_one(n) for n in range(sample_length)]).astype(float)
+            data = np.array([_gen_one(n) for n in range(sample_length)]).astype(float)
+
+        return data + np.random.poisson(noise, size=data.shape)
