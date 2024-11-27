@@ -279,7 +279,7 @@ def FisherInformation(A_list: np.ndarray, freq_list: np.ndarray, sigma=_Share.SI
     n = np.arange(N)
     for A in A_list:
         for f in freq_list:
-            _temp = ((tau*n) * np.sin(tau*f*n))**2
+            _temp = ((tau*n) * np.cos(tau*f*n))**2
             results_1.append((A/sigma)**2 * _temp.sum())
         results_2.append(results_1)
     return np.array(results_2)
