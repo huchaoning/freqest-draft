@@ -44,6 +44,13 @@ class qCMOS:
         fx = sp.interpolate.interp1d(np.linspace(250, 1100, 8501), 
                                      np.load(os.path.join(os.path.dirname(__file__), 'quantum_efficiency.npy')))
         return fx(wavelength)
+    
+    @classmethod
+    def convert2photons(cls, img):
+        # If the ADU value is less than the qCMOS offset, means the signal here is zero.
+        photons = (img - cls.OFFSET) * cls.CONVERSION_FACTOR
+        photons = np.clip(photons, 0, np.inf)
+        return photons
 
 
 class DMD:
@@ -107,8 +114,7 @@ class _Share:
                                     time_domain = self.td, 
                                     photons = self.pn, 
 
-                                    noise = self.noise,
-                                    noise_weight = self.w)
+                                    noise = self.noise)
 
 
 
@@ -181,21 +187,22 @@ class Estimates:
         ```
         (Estimates.noise - qCMOS.OFFSET) * qCMOS.CONVERSION_FACTOR
         ```
-
-        The `noise_weight` is just for MLE needs.
+        or
+        ```
+        qCMOS.convert2photons(Estimates.noise)
+        ```
     '''
     cropped_data: np.ndarray
     metadata: MetaData
+    noise: np.ndarray
 
     frequency_estimates: np.ndarray = None
     velocity_estimates: np.ndarray = None
     start_point_estimates: np.ndarray = None
 
     time_domain: np.ndarray = None
-    photons: np.ndarray = None
 
-    noise: np.ndarray = None
-    noise_weight: np.ndarray = None
+    photons: np.ndarray = None
 
 
     def savez(self, dirname):
@@ -230,6 +237,8 @@ def LoadEstimates(file):
         dic[k] = npz[k]
         if k.lower() == 'metadata':
             dic[k] = npz[k].item()
+        if k.lower() == 'noise_weight':
+            del dic[k]
     return Estimates(**dic)
 
 

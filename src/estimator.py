@@ -1,6 +1,7 @@
-from math import *
+from math import tau
 import numpy as np
 from scipy.optimize import curve_fit, minimize
+from scipy.special import erf, factorial
 
 
 __all__ = ['velocity_estimator', 'freq_estimator', 'td_estimator']
@@ -47,34 +48,7 @@ def freq_estimator(sample: np.ndarray, method='lse'):
 
 
 
-
-# The camera pixels are used as the length unit, so grid size is 1.
-# In that case, the function values of the Gaussian distribution can be used to approximate the integral values.
-class _MLE:
-    def _p(self, x, s, w):
-        return 0
-
-    def _nll(self, data, w, detectors):
-        axis = np.arange(detectors)
-        return lambda s: - data.T @ np.log(self._p(axis, s, w)) / data.sum()
-
-    def run(self, data, w):
-        # Use BFGS algorithm to minimize negative log-likelihood function.
-        result = minimize(self._nll(data, w, len(data)), x0=len(data)/2)
-        if result.success:
-            return result.x[0]
-        else:
-            raise RuntimeError('not converged')
-
-
-def _preprocess(sample: np.ndarray):
-    origin_shape = sample.shape
-    detectors = origin_shape[-1]
-    works = np.prod(origin_shape[:-1])
-    flatten = sample.reshape(-1, detectors)
-    return works, flatten
-
-
+# The camera pixels are used as the length unit, so the pixel size is 1.
 def _standardize(time_domain: np.ndarray, standardize: bool):
     if standardize:
         std = time_domain.std()
@@ -88,62 +62,76 @@ def _spade_td(sample: np.ndarray, w: np.ndarray, method: str):
     if method == 'sub':
         return sample[..., 1] - sample[..., 0]
     elif method == 'zhou2023':
-        # If the ADU value is less than the qCMOS offset, means the signal here is zero.
         # Add a small offset to avoid division by zero errors.
-        _sample = np.clip(sample - qCMOS.OFFSET, 0, np.inf) + 1e-12
+        _sample = qCMOS.convert2photons(sample) + 1e-12
         k = _sample[..., 0] / _sample[..., 1]
         time_domain = 2 * SPADE.SIGMA * (1 - np.sqrt(k)) / (1 + np.sqrt(k))
         return time_domain
     elif method == 'mle':
-        class MLE(_MLE):
-            def _p(self, k, s, w):
-                return (1-w)/8 * np.exp(-(s/(2*SPADE.SIGMA/qCMOS.PIXEL_SIZE))**2) * (s / (SPADE.SIGMA/qCMOS.PIXEL_SIZE) + 2*(-1)**(k + 1))**2 + w/sample.shape[-1]
-        mle = MLE()
-        works, flatten_data = _preprocess(sample)
-        if w is None:
-            time_domain = [qCMOS.PIXEL_SIZE * mle.run(flatten_data[i], 0) for i in range(works)]
-        else:
-            time_domain = [qCMOS.PIXEL_SIZE * mle.run(flatten_data[i], w.mean()) for i in range(works)]
-        return np.array(time_domain)
+        print('not supported yet')
     else:
         raise ValueError('spade_method must be sub, zhou2023, or mle')
 
 
-def _di_td(sample: np.ndarray, w: np.ndarray, method: str):
+def _di_td(data: np.ndarray, noise: np.ndarray, method: str = 'mle'):
     from .core import DI, qCMOS
-    if method == 'simple':
-        temp = sample.reshape(-1, sample.shape[-1]) / sample.reshape(-1, sample.shape[-1]).sum(axis=-1).reshape(-1, 1)
-        x_axis = np.arange(sample.shape[-1])
-        time_domain = (temp @ x_axis) * qCMOS.PIXEL_SIZE
-        return time_domain
-    elif method == 'mle':
-        class MLE(_MLE):
-            def _p(self, x, s, w):
-                return (1-w) / np.sqrt(tau*(DI.SIGMA/qCMOS.PIXEL_SIZE)**2) * np.exp(-(x-s)**2 / (2*(DI.SIGMA/qCMOS.PIXEL_SIZE)**2)) + w/sample.shape[-1]
-        mle = MLE()
-        works, flatten = _preprocess(sample)
-        if w is None:
-            time_domain = [qCMOS.PIXEL_SIZE * mle.run(flatten[i], 0) for i in range(works)]
-        else:
-            time_domain = [qCMOS.PIXEL_SIZE * mle.run(flatten[i], w.mean()) for i in range(works)]
-        return np.array(time_domain)
+    origin_shape = data.shape
+    flatten = data.reshape(-1, origin_shape[-1])
+    works = flatten.shape[0]
+
+    pn = qCMOS.convert2photons(flatten)
+    mass_center = pn @ np.arange(origin_shape[-1]) / pn.sum(-1)
+
+    if method.lower() == 'simple':
+        time_domain = mass_center
+
+    elif method.lower() == 'mle':
+        b = qCMOS.convert2photons(noise).mean() if noise is not None else 0
+        I0 = (pn - b).sum(-1).mean(0)
+
+        def _nll(frame):
+            _sig = DI.SIGMA / qCMOS.PIXEL_SIZE
+            x = np.arange(origin_shape[-1]).astype(float)
+            def wrapper(theta):
+                z1 = (x-theta+0.5) / (_sig*(2**0.5))
+                z2 = (x-theta-0.5) / (_sig*(2**0.5))
+                DeltaE = erf(z1)/2 - erf(z2)/2 + 1e-12 # smoothing
+                uk = I0 * DeltaE + b
+                grad = - np.sum(I0 * (-np.exp(-z1**2)/(_sig*tau**0.5) + np.exp(-z2**2)/(_sig*tau**0.5)) * (frame/uk - 1))
+                return - np.sum(frame * np.log(uk) - uk - np.log(factorial(frame))), grad
+            return wrapper
+
+        # Use the L-BFGS-B algorithm to minimize the negative log-likelihood function.
+        # The L-BFGS-B algorithm is chosen for its better convergence properties.
+        time_domain = []
+        for i in range(works):
+            result = minimize(_nll(pn[i]), [mass_center[i]], bounds=[(0, None)], jac=True, method='L-BFGS-B')
+            if result.success:
+                time_domain.append(result.x.item())
+            else:
+                raise ValueError('MLE is not converged')
+            
+    elif method.lower() == 'lse':
+        print('not supported yet') 
+    
     else:
-        raise ValueError('di_method must be simple or mle')
+        raise ValueError('di_method must be simple, lse or mle')
+    
+    return (np.array(time_domain).reshape(*origin_shape[:-1]) - DI.CENTER) * qCMOS.PIXEL_SIZE
 
 
 def td_estimator(measurement: str, 
                  data: np.ndarray, 
-                 w: np.ndarray = None, 
+                 noise: np.ndarray, 
                  di_method: str = 'mle', 
                  spade_method: str = 'sub', 
-                 standardize: bool = True):
+                 standardize: bool = False):
     
     if measurement.lower() == 'spade':
-        time_domain = _spade_td(data, w, spade_method)
+        time_domain = _spade_td(data, noise, spade_method)
     elif measurement.lower() == 'di':
-        time_domain = _di_td(data, w, di_method)
+        time_domain = _di_td(data, noise, di_method)
     else:
         raise ValueError('measurement must be spade or di')
 
-    time_domain = _standardize(time_domain, standardize)
-    return time_domain.reshape(*data.shape[:-1])
+    return _standardize(time_domain, standardize)
