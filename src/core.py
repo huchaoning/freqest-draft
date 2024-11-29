@@ -48,8 +48,9 @@ class qCMOS:
     @classmethod
     def convert2photons(cls, img):
         # If the ADU value is less than the qCMOS offset, means the signal here is zero.
+        # 1e-10 for smoothing
         photons = (img - cls.OFFSET) * cls.CONVERSION_FACTOR
-        photons = np.clip(photons, 0, np.inf)
+        photons = np.clip(photons, 1e-10, np.inf)
         return photons
 
 
@@ -382,7 +383,7 @@ class Simulator:
                 _sig = DI.SIGMA / qCMOS.PIXEL_SIZE
 
                 # (lower_bound, upper_bound), detectors = DI.crop_bound(self.meta.amplitude)
-                detectors = 500
+                detectors = 230
 
                 return np.histogram(np.random.normal(detectors/2+_loc, _sig, photons), 
                                     bins=detectors, range=(0, detectors))[0]
@@ -390,4 +391,4 @@ class Simulator:
             data = np.array([_gen_one(n) for n in range(sample_length)]).astype(float)
 
         noise = np.random.poisson(noise, size=data.shape)
-        return (data + noise)/qCMOS.CONVERSION_FACTOR + qCMOS.OFFSET, (noise)/qCMOS.CONVERSION_FACTOR + qCMOS.OFFSET
+        return np.round((data + noise)/qCMOS.CONVERSION_FACTOR + qCMOS.OFFSET), np.round((noise)/qCMOS.CONVERSION_FACTOR + qCMOS.OFFSET)

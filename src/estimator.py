@@ -1,6 +1,6 @@
 from math import tau
 import numpy as np
-from scipy.optimize import curve_fit, minimize
+from scipy.optimize import curve_fit, minimize, fsolve
 from scipy.special import erf, factorial
 
 
@@ -89,27 +89,29 @@ def _di_td(data: np.ndarray, noise: np.ndarray, method: str = 'mle'):
         b = qCMOS.convert2photons(noise).mean() if noise is not None else 0
         I0 = (pn - b).sum(-1).mean(0)
 
-        def _nll(frame):
+        def _gard_nll(frame):
             _sig = DI.SIGMA / qCMOS.PIXEL_SIZE
             x = np.arange(origin_shape[-1]).astype(float)
             def wrapper(theta):
                 z1 = (x-theta+0.5) / (_sig*(2**0.5))
                 z2 = (x-theta-0.5) / (_sig*(2**0.5))
-                DeltaE = erf(z1)/2 - erf(z2)/2 + 1e-12 # smoothing
+                DeltaE = erf(z1)/2 - erf(z2)/2
                 uk = I0 * DeltaE + b
-                grad = - np.sum(I0 * (-np.exp(-z1**2)/(_sig*tau**0.5) + np.exp(-z2**2)/(_sig*tau**0.5)) * (frame/uk - 1))
-                return - np.sum(frame * np.log(uk) - uk - np.log(factorial(frame))), grad
+                grad = - I0/(_sig*tau**0.5) * np.sum((-np.exp(-z1**2) + np.exp(-z2**2)) * (frame/uk - 1))
+                # return - np.sum(frame * np.log(uk) - uk - (frame * np.log(frame) - frame)), grad
+                return grad
             return wrapper
 
         # Use the L-BFGS-B algorithm to minimize the negative log-likelihood function.
         # The L-BFGS-B algorithm is chosen for its better convergence properties.
         time_domain = []
         for i in range(works):
-            result = minimize(_nll(pn[i]), [mass_center[i]], bounds=[(0, None)], jac=True, method='L-BFGS-B')
-            if result.success:
-                time_domain.append(result.x.item())
+            # result = minimize(_nll(pn[i]), [mass_center[i]], jac=True)
+            result = fsolve(_gard_nll(pn[i]), x0=mass_center[i], full_output=True)
+            if result[2]:
+                time_domain.append(result[0])
             else:
-                raise ValueError('MLE is not converged')
+                raise RuntimeError(f'MLE is not converged, {result[3]}')
             
     elif method.lower() == 'lse':
         print('not supported yet') 
@@ -125,7 +127,7 @@ def td_estimator(measurement: str,
                  noise: np.ndarray, 
                  di_method: str = 'mle', 
                  spade_method: str = 'sub', 
-                 standardize: bool = False):
+                 standardize: bool = True):
     
     if measurement.lower() == 'spade':
         time_domain = _spade_td(data, noise, spade_method)
