@@ -328,12 +328,12 @@ class Simulator:
         fo = fs * self.meta.ground_truth
 
         if self.waveform.lower() == 'sign':
-            _k = np.sign(np.sin(tau * fo * (t + 1e-6 + self.delay)))
+            _k = np.sign(np.sin(tau * fo * (t + self.delay)))
             if _k == 0:
                 _k = 1
             return self.meta.amplitude * (1 + _k)
         elif self.waveform.lower() == 'sin':
-            return self.meta.amplitude * (1 + np.sin(tau * fo * (t + 1e-6 + self.delay)))
+            return self.meta.amplitude * (1 + np.sin(tau * fo * (t + self.delay)))
         elif self.waveform.lower() == 'linear':
             return self.meta.ground_truth * (t + 1e-6 + self.delay) - 5 * DMD.PIXEL_SIZE
         else:
