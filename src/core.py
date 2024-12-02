@@ -1,5 +1,5 @@
 import os
-from math import *
+from math import tau, pi
 import numpy as np
 import scipy as sp
 import gc
@@ -39,6 +39,7 @@ class qCMOS:
     OFFSET = 200
     QUANTUM_EFFICIENCY_770 = 0.5528 # @770nm
 
+
     @classmethod
     def quantum_efficiency(cls, wavelength):
         fx = sp.interpolate.interp1d(np.linspace(250, 1100, 8501), 
@@ -46,11 +47,11 @@ class qCMOS:
         return fx(wavelength)
     
     @classmethod
-    def convert2photons(cls, img):
+    def convert2photons(cls, img, smoothing=1e-10):
         # If the ADU value is less than the qCMOS offset, means the signal here is zero.
         # 1e-10 for smoothing
         photons = (img - cls.OFFSET) * cls.CONVERSION_FACTOR
-        photons = np.clip(photons, 1e-10, np.inf)
+        photons = np.clip(photons, smoothing, np.inf)
         return photons
 
 
@@ -66,56 +67,174 @@ class SLM:
     RESOLUTION = (1920, 1080)
 
 
+
+
+######################
+#      Data Cls      #
+######################
+class _Repr:
+    def __repr__(self):
+        return '\n'.join(f'{attribute}: {value}' for attribute, value in self.__dict__.items())
+    
+@dataclass
+class MetaData(_Repr):
+    '''
+    Data class to store metadata for measurements.
+
+    Parameters:
+        measurement (str): The type of measurement, 'SPADE' or 'DI'.
+        ground_truth (float): The ground truth value, frequency (frames/s) or velocity (um/s).
+        estimating (str): Deciding to estimate frequency or velocity. 
+
+        amplitude (float, optional): The amplitude value. Keep it None if estimating velocity.
+        pwm_duty (int, optional): The PWM duty cycle. Defaults to 0.
+        methods (str, optional): Estimation algorithm. Keep it None, and the program will decide automatically.
+        timestamp (np.ndarray, optional): Keep it None if simulating.
+    '''
+    measurement: str
+    ground_truth: float
+    estimating: str
+
+    amplitude: float = None
+    pwm_duty: int = 0
+    methods: str = None
+    timestamp: np.ndarray = None
+
+    def __post_init__(self):
+        if self.methods is None:
+            if self.estimating.lower() == 'frequency':
+                if self.measurement.lower() == 'di':
+                    self.methods = ('mle', 'lse') if self.pwm_duty == 0 else ('lse', 'lse')
+                elif self.measurement.lower() == 'spade':
+                    self.methods = ('sub', 'lse') if self.pwm_duty == 0 else ('sub', 'lse')
+                else:
+                    raise ValueError('measurement must be DI or SPADE')
+            
+            elif self.estimating.lower() == 'velocity':
+                if self.measurement.lower() == 'di':
+                    self.methods = ('mle', 'lse') if self.pwm_duty == 0 else ('lse', 'lse')
+                elif self.measurement.lower() == 'spade':
+                    self.methods = ('zhou2023', 'lse') if self.pwm_duty == 0 else ('zhou2023', 'lse')
+                else:
+                    raise ValueError('measurement must be DI or SPADE')
+            
+            else:
+                raise ValueError('estimating must be frequency or velocity')
+
+    def __repr__(self):
+        return super().__repr__()
+
+
+@dataclass
+class Estimates(_Repr):
+    '''
+        NOTE: Only `photons` is in unit of photon number, other data related to photon count are in unit of ADU.
+
+        EXAMPLE: If you want to know the photon number of the noise, you needs to 
+        ```
+        (Estimates.noise - qCMOS.OFFSET) * qCMOS.CONVERSION_FACTOR
+        ```
+        or
+        ```
+        qCMOS.convert2photons(Estimates.noise)
+        ```
+    '''
+    cropped_data: np.ndarray
+    metadata: MetaData
+    background: np.ndarray
+
+    estimates_a: np.ndarray
+    estimates_b: np.ndarray = None
+
+    time_domain: np.ndarray = None
+    photons: np.ndarray = None
+
+
+    def savez(self, dirname):
+        dirname = os.path.expanduser(dirname)
+        truth = self.metadata.ground_truth
+
+        m = self.metadata.measurement.lower()
+        d = self.metadata.pwm_duty
+
+        if self.metadata.estimating.lower() == 'frequency':
+            px = round(self.metadata.amplitude / DMD.PIXEL_SIZE * 2)
+            filename = os.path.join(dirname, f'{m}_{px}px_f{truth}_d{d}.npz')
+        elif self.metadata.estimating.lower() == 'velocity':
+            filename = os.path.join(dirname, f'{m}_v{truth}_d{d}.npz')
+
+        if os.path.exists(filename): 
+            raise FileExistsError(f'{filename} already exists')
+
+        np.savez_compressed(filename, **self.__dict__)
+
+    @classmethod
+    def load(cls, file):
+        return LoadEstimates(file)
+    
+    def __repr__(self):
+        return super().__repr__()
+
+
+
+def LoadEstimates(file):
+    file = os.path.expanduser(file)
+    npz = np.load(file, allow_pickle=True)
+    dic = {}
+    for k in npz.files:
+        dic[k] = npz[k]
+        if k.lower() == 'metadata':
+            dic[k] = npz[k].item()
+    return Estimates(**dic)
+
+
+
+
 ######################
 #    Measurements    #
 ######################
 class _Share:
     SIGMA = 103 #um
-    def __init__(self, raw=None, cropped=None, noise=None, velocity=False):
-        self.velocity = velocity
+    def __init__(self, raw=None, cropped=None, background=None, metadata: MetaData=None):
+        self.meta = metadata
         if raw is not None:
             self.raw = raw.astype(float)
 
             temp = self.raw[..., :-4, :]
-            self.noise = (temp[..., :5,   :5].mean((-1, -2)) + temp[..., -5:,   :5].mean((-1, -2))  + 
+            self.background = (temp[..., :5,   :5].mean((-1, -2)) + temp[..., -5:,   :5].mean((-1, -2))  + 
                           temp[..., :5, -5: ].mean((-1, -2)) + temp[..., -5:, -5: ].mean((-1, -2))) / 4
             del raw, temp
             self.crop()
 
-        elif (cropped is not None) and (noise is not None):
+        elif (cropped is not None) and (background is not None):
             self.cropped = cropped
-            self.noise = noise
+            self.background = background
         
         else:
-            raise ValueError('When raw is not given, cropped and noise must be given. When raw is given, cropped and noise will be ignored.')
+            raise ValueError('When raw is not given, cropped and background must be given. When raw is given, cropped and background will be ignored.')
 
 
-    def est_all(self, metadata):
-        self.pn = ((self.cropped - qCMOS.OFFSET).sum(-1)) * qCMOS.CONVERSION_FACTOR
-        # self.w = self.noise / self.cropped.mean(-1)
-        if self.velocity:
-            self.td = td_estimator(self.__class__.__name__, self.cropped, self.noise, standardize=False, spade_method='mle')
+    def est_all(self):
+        if self.meta.estimating.lower() == 'velocity':
+            self.td = td_estimator(self.__class__.__name__, self.cropped, self.background, self.meta.methods[0], standardize=False)
             _result = np.array([velocity_estimator(sample) for sample in self.td])
-            self.v, self.b = _result[:, 0], _result[:, 1]
-            self.lse = None
-        elif not self.velocity:
-            self.td = td_estimator(self.__class__.__name__, self.cropped, self.noise, di_method='mle' if metadata.pwm_duty == 0 else 'lse')
-            self.lse = np.array([freq_estimator(sample) for sample in self.td])
-            self.v, self.b = None, None
-        else:
-            ValueError('set velocity as False (default) to estimate the frequency')
+            self.theta_a, self.theta_a = _result[:, 0], _result[:, 1]
+
+        elif self.meta.estimating.lower() == 'frequency':
+            self.td = td_estimator(self.__class__.__name__, self.cropped, self.background, self.meta.methods[0], standardize=False)
+            self.theta_a = np.array([freq_estimator(sample) for sample in self.td])
+            self.theta_b = None
 
         self.estimates = Estimates( cropped_data = self.cropped, 
-                                    metadata = metadata,
+                                    metadata = self.meta,
            
-                                    frequency_estimates = self.lse,
-                                    velocity_estimates = self.v,
-                                    start_point_estimates = self.b,
+                                    estimates_a = self.theta_a,
+                                    estimates_b = self.theta_b,
 
                                     time_domain = self.td, 
-                                    photons = self.pn, 
+                                    photons = qCMOS.convert2photons(self.cropped, 0), 
 
-                                    noise = self.noise)
+                                    background = self.background)
 
 
 
@@ -137,129 +256,41 @@ class DI(_Share):
     
     ROI = {'X0': 1440, 'Y0': 876, 'W': 160, 'H': 228}
 
-    def __init__(self, *args, amplitude=None, velocity=False, **kwargs):
-        if not velocity and amplitude is not None:
+    def __init__(self, *args, **kwargs):
+        meta: MetaData = kwargs['metadata']
+        if not meta.estimating.lower() == 'frequency':
             self.lower_bound = int(np.ceil(self.CENTER + 4*self.SIGMA / qCMOS.PIXEL_SIZE))
-            self.upper_bound = int(np.ceil(self.CENTER - (2*amplitude + 4*self.SIGMA) / qCMOS.PIXEL_SIZE))  
-        elif velocity:
+            self.upper_bound = int(np.ceil(self.CENTER - (2*meta.amplitude + 4*self.SIGMA) / qCMOS.PIXEL_SIZE))  
+        elif not meta.estimating.lower() == 'velocity':
             self.lower_bound = int(np.ceil(self.CENTER + (5*DMD.PIXEL_SIZE + 4*self.SIGMA) / qCMOS.PIXEL_SIZE))
             self.upper_bound = int(np.ceil(self.CENTER - (5*DMD.PIXEL_SIZE + 4*self.SIGMA) / qCMOS.PIXEL_SIZE))
-        else: 
-            raise ValueError('When velocity is False (default), amplitude must be given. When velocity is True, amplitude will be ignored.')
 
         self.detectors = self.lower_bound - self.upper_bound
-        super().__init__(velocity=velocity, *args, **kwargs)
-
+        super().__init__(*args, **kwargs)
 
     def crop(self):
         self.cropped = self.raw[..., self.upper_bound:self.lower_bound, self.X_AXIS]
 
 
 
+
 ######################
-#      Main Cls      #
+#     Estimation     #
 ######################
-@dataclass
-class MetaData:
-    '''
-    Data class to store metadata for measurements.
-
-    Parameters:
-        measurement (str): The type of measurement, 'SPADE' or 'DI'.
-        ground_truth (float): The ground truth value, frequency (frames/s) or velocity (um/s).
-        amplitude (float, optional): The amplitude value. Keep it None if estimating velocity.
-        pwm_duty (int, optional): The PWM duty cycle. Defaults to 0.
-        timestamp (np.ndarray, optional): Keep it None if simulating.
-    '''
-    measurement: str
-    ground_truth: float
-    amplitude: float = None
-    pwm_duty: int = 0
-    timestamp: np.ndarray = None
-
-    
-
-
-
-@dataclass
-class Estimates:
-    '''
-        NOTE: Only `photons` is in unit of photon number, other data related to photon count are in unit of Adu.
-
-        EXAMPLE: If you want to know the photon number of the noise, you needs to 
-        ```
-        (Estimates.noise - qCMOS.OFFSET) * qCMOS.CONVERSION_FACTOR
-        ```
-        or
-        ```
-        qCMOS.convert2photons(Estimates.noise)
-        ```
-    '''
-    cropped_data: np.ndarray
-    metadata: MetaData
-    noise: np.ndarray
-
-    frequency_estimates: np.ndarray = None
-    velocity_estimates: np.ndarray = None
-    start_point_estimates: np.ndarray = None
-
-    time_domain: np.ndarray = None
-
-    photons: np.ndarray = None
-
-
-    def savez(self, dirname):
-        dirname = os.path.expanduser(dirname)
-        truth = self.metadata.ground_truth
-
-        m = self.metadata.measurement.lower()
-        d = self.metadata.pwm_duty
-
-        if self.frequency_estimates is not None:
-            px = round(self.metadata.amplitude / DMD.PIXEL_SIZE * 2)
-            filename = os.path.join(dirname, f'{m}_{px}px_f{truth}_d{d}.npz')
-        elif self.velocity_estimates is not None:
-            filename = os.path.join(dirname, f'{m}_v{truth}_d{d}.npz')
-
-        if os.path.exists(filename): 
-            raise FileExistsError(f'{filename} already exists')
-
-        np.savez_compressed(filename, **self.__dict__)
-
-    @classmethod
-    def load(cls, file):
-        return LoadEstimates(file)
-
-
-
-def LoadEstimates(file):
-    file = os.path.expanduser(file)
-    npz = np.load(file, allow_pickle=True)
-    dic = {}
-    for k in npz.files:
-        dic[k] = npz[k]
-        if k.lower() == 'metadata':
-            dic[k] = npz[k].item()
-        if k.lower() == 'noise_weight':
-            del dic[k]
-    return Estimates(**dic)
-
-
-
 class Estimation:
     @classmethod
-    def FromRaw(cls, raw: np.ndarray, metadata: MetaData, velocity=False):
+    def FromRaw(cls, raw: np.ndarray, metadata: MetaData):
         if metadata.measurement.upper() == 'SPADE':
-            expt = SPADE(raw, velocity=velocity)
+            expt = SPADE(raw=raw, metadata=metadata)
         elif metadata.measurement.upper() == 'DI':
-            expt = DI(raw, amplitude=metadata.amplitude, velocity=velocity)
+            expt = DI(raw=raw, metadata=metadata)
         else:
-            raise ValueError
+            raise ValueError('measurement must be SPADE or DI')
         
         del raw
 
         gc.collect()
-        expt.est_all(metadata)
+        expt.est_all()
         return expt.estimates
 
 
@@ -267,17 +298,16 @@ class Estimation:
     def FromEstimates(cls, Estimates_instance: Estimates):
         c: Estimates = np.copy(Estimates_instance).item()
         del Estimates_instance
-        velocity = True if c.metadata.amplitude is None else False
 
         if c.metadata.measurement.upper() == 'SPADE':
-            expt = SPADE(cropped=c.cropped_data, noise=c.noise, velocity=velocity)
+            expt = SPADE(cropped=c.cropped_data, background=c.background, metadata=c.metadata)
         elif c.metadata.measurement.upper() == 'DI':
-            expt = DI(amplitude=c.metadata.amplitude, cropped=c.cropped_data, noise=c.noise, velocity=velocity)
+            expt = DI(cropped=c.cropped_data, background=c.background, metadata=c.metadata)
         else:
-            raise ValueError
+            raise ValueError('measurement must be SPADE or DI')
 
         gc.collect()
-        expt.est_all(c.metadata)
+        expt.est_all()
         return expt.estimates
 
 

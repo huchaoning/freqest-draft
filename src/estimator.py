@@ -131,15 +131,14 @@ def _di_td(data: np.ndarray, noise: np.ndarray, method: str = 'mle'):
 def td_estimator(measurement: str, 
                  data: np.ndarray, 
                  noise: np.ndarray, 
-                 di_method: str = 'mle', 
-                 spade_method: str = 'sub', 
-                 standardize: bool = True):
+                 method: str,
+                 standardize: bool):
     
     if measurement.lower() == 'spade':
-        time_domain = _spade_td(data, noise, spade_method)
+        time_domain = _spade_td(data, noise, method)
     elif measurement.lower() == 'di':
-        time_domain = _di_td(data, noise, di_method)
+        time_domain = _di_td(data, noise, method)
     else:
-        raise ValueError('measurement must be spade or di')
+        raise ValueError('measurement must be SPADE or DI')
 
     return _standardize(time_domain, standardize)
