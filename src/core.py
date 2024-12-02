@@ -92,14 +92,14 @@ class _Share:
 
     def est_all(self, metadata):
         self.pn = ((self.cropped - qCMOS.OFFSET).sum(-1)) * qCMOS.CONVERSION_FACTOR
-        self.w = self.noise / self.cropped.mean(-1)
+        # self.w = self.noise / self.cropped.mean(-1)
         if self.velocity:
-            self.td = td_estimator(self.__class__.__name__, self.cropped, self.w, standardize=False, spade_method='mle')
+            self.td = td_estimator(self.__class__.__name__, self.cropped, self.noise, standardize=False, spade_method='mle')
             _result = np.array([velocity_estimator(sample) for sample in self.td])
             self.v, self.b = _result[:, 0], _result[:, 1]
             self.lse = None
         elif not self.velocity:
-            self.td = td_estimator(self.__class__.__name__, self.cropped, self.w)
+            self.td = td_estimator(self.__class__.__name__, self.cropped, self.noise, di_method='mle' if metadata.pwm_duty == 0 else 'lse')
             self.lse = np.array([freq_estimator(sample) for sample in self.td])
             self.v, self.b = None, None
         else:
@@ -176,6 +176,8 @@ class MetaData:
     amplitude: float = None
     pwm_duty: int = 0
     timestamp: np.ndarray = None
+
+    
 
 
 

@@ -1,7 +1,8 @@
 from math import tau
 import numpy as np
-from scipy.optimize import curve_fit, minimize, fsolve
-from scipy.special import erf, factorial
+from scipy.optimize import curve_fit, fsolve
+from scipy.special import erf
+from scipy.stats import norm
 
 
 __all__ = ['velocity_estimator', 'freq_estimator', 'td_estimator']
@@ -40,7 +41,7 @@ def freq_estimator(sample: np.ndarray, method='lse'):
         # Use LSE as frequency estimator. 
         # Note that LSE and MLE are the same in WGN.
         n = np.arange(len(sample), dtype=np.float64)
-        popt, _= curve_fit(f=waveform, xdata=n, ydata=sample, p0=pre_freq_est)
+        popt, _= curve_fit(f=waveform, xdata=n, ydata=sample, p0=pre_freq_est, maxfev=1000)
         return popt.item()
 
     else:
@@ -78,44 +79,49 @@ def _di_td(data: np.ndarray, noise: np.ndarray, method: str = 'mle'):
     origin_shape = data.shape
     flatten = data.reshape(-1, origin_shape[-1])
     works = flatten.shape[0]
+    pixels = origin_shape[-1]
 
     pn = qCMOS.convert2photons(flatten)
-    mass_center = pn @ np.arange(origin_shape[-1]) / pn.sum(-1)
+    mass_center = pn @ np.arange(pixels) / pn.sum(-1)
 
     if method.lower() == 'simple':
         time_domain = mass_center
 
-    elif method.lower() == 'mle':
-        b = qCMOS.convert2photons(noise).mean() if noise is not None else 0
+    elif method.lower() in ('mle', 'lse'):
+        b = qCMOS.convert2photons(noise).mean()
         I0 = (pn - b).sum(-1).mean(0)
+        _sig = DI.SIGMA / qCMOS.PIXEL_SIZE
 
-        def _gard_nll(frame):
-            _sig = DI.SIGMA / qCMOS.PIXEL_SIZE
-            x = np.arange(origin_shape[-1]).astype(float)
+        def _uk(x_, theta):
+            z1 = (x_ - theta + 0.5) / (_sig * (2**0.5))
+            z2 = (x_ - theta - 0.5) / (_sig * (2**0.5))
+            DeltaE = erf(z1)/2 - erf(z2)/2
+            return I0 * DeltaE + b
+
+        def _grad_nll(frame):
+            x = np.arange(pixels).astype(float)
             def wrapper(theta):
-                z1 = (x-theta+0.5) / (_sig*(2**0.5))
-                z2 = (x-theta-0.5) / (_sig*(2**0.5))
+                z1 = (x - theta + 0.5) / (_sig * (2**0.5))
+                z2 = (x - theta - 0.5) / (_sig * (2**0.5))
                 DeltaE = erf(z1)/2 - erf(z2)/2
                 uk = I0 * DeltaE + b
-                grad = - I0/(_sig*tau**0.5) * np.sum((-np.exp(-z1**2) + np.exp(-z2**2)) * (frame/uk - 1))
-                # return - np.sum(frame * np.log(uk) - uk - (frame * np.log(frame) - frame)), grad
-                return grad
+                # - np.sum(frame * np.log(uk) - uk - (frame * np.log(frame) - frame))
+                return - I0/(_sig*tau**0.5) * np.sum((-np.exp(-z1**2) + np.exp(-z2**2)) * (frame/uk - 1))
             return wrapper
 
-        # Use the L-BFGS-B algorithm to minimize the negative log-likelihood function.
-        # The L-BFGS-B algorithm is chosen for its better convergence properties.
         time_domain = []
         for i in range(works):
-            # result = minimize(_nll(pn[i]), [mass_center[i]], jac=True)
-            result = fsolve(_gard_nll(pn[i]), x0=mass_center[i], full_output=True)
+            if method.lower() == 'mle':
+                result = fsolve(_grad_nll(pn[i]), x0=mass_center[i], full_output=True)
+
+            elif method.lower() == 'lse':
+                result = curve_fit(_uk, xdata=np.arange(pixels), ydata=pn[i], p0=mass_center[i], maxfev=800, full_output=True)
+            
             if result[2]:
                 time_domain.append(result[0])
             else:
-                raise RuntimeError(f'MLE is not converged, {result[3]}')
-            
-    elif method.lower() == 'lse':
-        print('not supported yet') 
-    
+                raise RuntimeError(f'Time-Domain estimator: {method.upper()} is not converged, {result[3]}')
+
     else:
         raise ValueError('di_method must be simple, lse or mle')
     
