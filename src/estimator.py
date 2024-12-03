@@ -58,23 +58,61 @@ def _standardize(time_domain: np.ndarray, standardize: bool):
     return time_domain
 
 
-def _spade_td(sample: np.ndarray, w: np.ndarray, method: str):
+def _spade_td(data: np.ndarray, background: np.ndarray, method: str):
     from .core import SPADE, qCMOS
-    if method == 'sub':
-        return sample[..., 1] - sample[..., 0]
-    elif method == 'zhou2023':
-        # Add a small offset to avoid division by zero errors.
-        _sample = qCMOS.convert2photons(sample) + 1e-12
-        k = _sample[..., 0] / _sample[..., 1]
-        time_domain = 2 * SPADE.SIGMA * (1 - np.sqrt(k)) / (1 + np.sqrt(k))
-        return time_domain
-    elif method == 'mle':
-        print('not supported yet')
+
+    temp = qCMOS.convert2photons(data)
+    k = temp[..., 0] / temp[..., 1]
+    zhou2023 = - 2 * SPADE.SIGMA * (1 - np.sqrt(k)) / (1 + np.sqrt(k))
+
+    if method.lower() == 'sub':
+        return data[..., 1] - data[..., 0]
+    
+    elif method.lower() == 'zhou2023':
+        return - zhou2023
+    
+    elif method.lower() in ('lse', 'mle'):
+        origin_shape = data.shape
+        flatten = data.reshape(-1, origin_shape[-1])
+        works = flatten.shape[0]
+
+        pn = qCMOS.convert2photons(flatten)
+        b = qCMOS.convert2photons(background).mean()
+        I0 = (pn - b).sum(-1).mean(0)
+
+        def _uk(q, theta):
+            xi = theta / (2 * SPADE.SIGMA)
+            return I0/2 * (xi + (-1)**q)**2 * np.exp(-xi**2) + b
+        
+        def _grad_nll(frame):
+            def wrapper(theta):
+                xi = theta / (2 * SPADE.SIGMA)
+                return I0/(2*SPADE.SIGMA)*np.exp(-xi**2)*((xi + 1) * (xi**2 + xi - 1) * (frame[0]/_uk(0, theta) - 1) + 
+                                                          (xi - 1) * (xi**2 - xi - 1) * (frame[1]/_uk(1, theta) - 1))
+            return wrapper
+
+        time_domain = []
+        for i in range(works):
+            if method.lower() == 'mle':
+                result = fsolve(_grad_nll(pn[i]), x0=np.ravel(zhou2023)[i], full_output=True)
+
+            elif method.lower() == 'lse':
+                result = curve_fit(_uk, xdata=np.array([0, 1]), ydata=pn[i], p0=np.ravel(zhou2023)[i], maxfev=800, full_output=True)
+            
+            if result[2]:
+                time_domain.append(result[0])
+            else:
+                raise RuntimeError(f'Time-Domain estimator: {method.upper()} is not converged, {result[3]}')
+            
+        return - np.array(time_domain).reshape(*origin_shape[:-1])
+
     else:
-        raise ValueError('spade_method must be sub, zhou2023, or mle')
+        raise ValueError('spade_method must be sub, zhou2023, lse, or mle')
 
 
-def _di_td(data: np.ndarray, noise: np.ndarray, method: str = 'mle'):
+
+
+def _di_td(data: np.ndarray, background: np.ndarray, method: str):
     from .core import DI, qCMOS
     origin_shape = data.shape
     flatten = data.reshape(-1, origin_shape[-1])
@@ -88,7 +126,7 @@ def _di_td(data: np.ndarray, noise: np.ndarray, method: str = 'mle'):
         time_domain = mass_center
 
     elif method.lower() in ('mle', 'lse'):
-        b = qCMOS.convert2photons(noise).mean()
+        b = qCMOS.convert2photons(background).mean()
         I0 = (pn - b).sum(-1).mean(0)
         _sig = DI.SIGMA / qCMOS.PIXEL_SIZE
 
@@ -125,19 +163,19 @@ def _di_td(data: np.ndarray, noise: np.ndarray, method: str = 'mle'):
     else:
         raise ValueError('di_method must be simple, lse or mle')
     
-    return (np.array(time_domain).reshape(*origin_shape[:-1]) - DI.CENTER) * qCMOS.PIXEL_SIZE
+    return (np.array(time_domain).reshape(*origin_shape[:-1]) - pixels/2) * qCMOS.PIXEL_SIZE
 
 
 def td_estimator(measurement: str, 
                  data: np.ndarray, 
-                 noise: np.ndarray, 
+                 background: np.ndarray, 
                  method: str,
                  standardize: bool):
     
     if measurement.lower() == 'spade':
-        time_domain = _spade_td(data, noise, method)
+        time_domain = _spade_td(data, background, method)
     elif measurement.lower() == 'di':
-        time_domain = _di_td(data, noise, method)
+        time_domain = _di_td(data, background, method)
     else:
         raise ValueError('measurement must be SPADE or DI')
 

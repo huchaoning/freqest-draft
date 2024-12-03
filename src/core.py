@@ -143,7 +143,7 @@ class Estimates(_Repr):
     metadata: MetaData
     background: np.ndarray
 
-    estimates_a: np.ndarray
+    estimates_a: np.ndarray = None
     estimates_b: np.ndarray = None
 
     time_domain: np.ndarray = None
@@ -221,7 +221,7 @@ class _Share:
             self.theta_a, self.theta_a = _result[:, 0], _result[:, 1]
 
         elif self.meta.estimating.lower() == 'frequency':
-            self.td = td_estimator(self.__class__.__name__, self.cropped, self.background, self.meta.methods[0], standardize=False)
+            self.td = td_estimator(self.__class__.__name__, self.cropped, self.background, self.meta.methods[0], standardize=True)
             self.theta_a = np.array([freq_estimator(sample) for sample in self.td])
             self.theta_b = None
 
