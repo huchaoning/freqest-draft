@@ -217,12 +217,12 @@ class _Share:
     def est_all(self):
         if self.meta.estimating.lower() == 'velocity':
             self.td = td_estimator(self.__class__.__name__, self.cropped, self.background, self.meta.methods[0], standardize=False)
-            _result = np.array([velocity_estimator(sample) for sample in self.td])
+            _result = np.array([velocity_estimator(sample, self.meta.methods[1]) for sample in self.td])
             self.theta_a, self.theta_a = _result[:, 0], _result[:, 1]
 
         elif self.meta.estimating.lower() == 'frequency':
             self.td = td_estimator(self.__class__.__name__, self.cropped, self.background, self.meta.methods[0], standardize=True)
-            self.theta_a = np.array([freq_estimator(sample) for sample in self.td])
+            self.theta_a = np.array([freq_estimator(sample, self.meta.methods[1]) for sample in self.td])
             self.theta_b = None
 
         self.estimates = Estimates( cropped_data = self.cropped, 
@@ -373,9 +373,9 @@ class Simulator:
             _k = np.sign(np.sin(tau * fo * (t + self.delay)))
             if _k == 0:
                 _k = 1
-            return self.meta.amplitude * (1 + _k)
+            return self.meta.amplitude * (_k - 1)
         elif self.waveform.lower() == 'sin':
-            return self.meta.amplitude * (1 + np.sin(tau * fo * (t + self.delay)))
+            return self.meta.amplitude * (np.sin(tau * fo * (t + self.delay)) - 1)
         elif self.waveform.lower() == 'linear':
             return self.meta.ground_truth * (t + 1e-6 + self.delay) - 5 * DMD.PIXEL_SIZE
         else:
