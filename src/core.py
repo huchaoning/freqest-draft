@@ -114,7 +114,7 @@ class MetaData(_Repr):
                 if self.measurement.lower() == 'di':
                     self.methods = ('mle', 'lse') if self.pwm_duty == 0 else ('lse', 'lse')
                 elif self.measurement.lower() == 'spade':
-                    self.methods = ('zhou2023', 'lse') if self.pwm_duty == 0 else ('zhou2023', 'lse')
+                    self.methods = ('mle', 'lse') if self.pwm_duty == 0 else ('lse', 'lse')
                 else:
                     raise ValueError('measurement must be DI or SPADE')
             
