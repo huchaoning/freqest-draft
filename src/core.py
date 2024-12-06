@@ -232,7 +232,7 @@ class _Share:
                                     estimates_b = self.theta_b,
 
                                     time_domain = self.td, 
-                                    photons = qCMOS.convert2photons(self.cropped, 0), 
+                                    photons = qCMOS.convert2photons(self.cropped, 0).sum(-1),
 
                                     background = self.background)
 

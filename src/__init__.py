@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 
 from mpl_toolkits.axes_grid1.inset_locator import mark_inset
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
+import matplotlib.ticker as ticker
 
 from matplotlib_inline import backend_inline
 backend_inline.set_matplotlib_formats('svg')
