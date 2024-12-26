@@ -269,6 +269,40 @@ class DI(_Share):
     def crop(self):
         self.cropped = self.raw[..., self.upper_bound:self.lower_bound, self.X_AXIS]
 
+    @classmethod
+    def gamma(cls, s, b, a=qCMOS.PIXEL_SIZE, regin=np.inf):
+        s = np.array(s)
+        ndim = s.ndim
+
+        s = np.array([s]) if ndim == 0 else s
+
+        from scipy.special import erf
+        if regin == np.inf:
+            k = np.arange(-10*cls.SIGMA, 10*cls.SIGMA + a, a)
+        else:
+            k = np.arange(-regin, regin + a, a)
+
+        zp = np.array([(k - _s + 0.5*a) / (cls.SIGMA * (2**0.5)) for _s in np.asarray(s)])
+        zn = np.array([(k - _s - 0.5*a) / (cls.SIGMA * (2**0.5)) for _s in np.asarray(s)])
+        
+        uk = erf(zp)/2 - erf(zn)/2 + b
+        duk = 1/(cls.SIGMA*(tau**0.5)) * (-np.exp(-zp**2) + np.exp(-zn**2))
+
+        if ndim == 0:
+            return cls.SIGMA**2 * (1 / uk * duk**2).sum()
+        else:
+            return cls.SIGMA**2 * (1 / uk * duk**2).sum(-1)
+
+
+class BiSPADE(_Share):
+    @classmethod
+    def gamma(cls, s, b):
+        xi = s / (2 * cls.SIGMA)
+        uk = lambda k: 1 / 2 * (xi + k)**2 * np.exp(-xi**2) + b
+        duk = lambda k: - 1 / (2 * cls.SIGMA) * (xi + k) * (xi**2 + k * xi - 1) * np.exp(-xi**2)
+
+        return cls.SIGMA**2 * np.array([1 / uk(k) * duk(k)**2 for k in (-1, 1)]).sum(0)
+
 
 
 
