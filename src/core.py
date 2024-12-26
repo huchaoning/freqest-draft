@@ -104,17 +104,17 @@ class MetaData(_Repr):
         if self.methods is None:
             if self.estimating.lower() == 'frequency':
                 if self.measurement.lower() == 'di':
-                    self.methods = ('mle', 'lse') if self.pwm_duty == 0 else ('lse', 'lse')
+                    self.methods = ('mle', 'lse') if self.pwm_duty == 0 else ('mle', 'lse')
                 elif self.measurement.lower() == 'spade':
-                    self.methods = ('sub', 'lse') if self.pwm_duty == 0 else ('sub', 'lse')
+                    self.methods = ('mle', 'lse') if self.pwm_duty == 0 else ('mle', 'lse')
                 else:
                     raise ValueError('measurement must be DI or SPADE')
             
             elif self.estimating.lower() == 'velocity':
                 if self.measurement.lower() == 'di':
-                    self.methods = ('mle', 'lse') if self.pwm_duty == 0 else ('lse', 'lse')
+                    self.methods = ('mle', 'lse') if self.pwm_duty == 0 else ('mle', 'lse')
                 elif self.measurement.lower() == 'spade':
-                    self.methods = ('mle', 'lse') if self.pwm_duty == 0 else ('lse', 'lse')
+                    self.methods = ('mle', 'lse') if self.pwm_duty == 0 else ('mle', 'lse')
                 else:
                     raise ValueError('measurement must be DI or SPADE')
             
@@ -222,7 +222,8 @@ class _Share:
 
         elif self.meta.estimating.lower() == 'frequency':
             self.td = td_estimator(self.__class__.__name__, self.cropped, self.background, self.meta.methods[0], standardize=True)
-            self.theta_a = np.array([freq_estimator(sample, self.meta.methods[1]) for sample in self.td])
+            zero_padding = 512 if self.meta.pwm_duty == 0 else 0 # no padding to avoid interference when noisy; pad if 0noise
+            self.theta_a = np.array([freq_estimator(sample, self.meta.methods[1], zero_padding) for sample in self.td])
             self.theta_b = None
 
         self.estimates = Estimates( cropped_data = self.cropped, 
