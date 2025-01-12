@@ -16,6 +16,7 @@ __all__ = [
 
     'SPADE',
     'DI',
+    'BiSPADE',
 
     'MetaData',
     'Estimates',
@@ -127,13 +128,13 @@ class Estimates(_Repr):
     '''
         NOTE: Only `photons` is in unit of photon number, other data related to photon count are in unit of ADU.
 
-        EXAMPLE: If you want to know the photon number of the noise, you needs to 
+        EXAMPLE: If you want to know the photon number of background, you needs to 
         ```
-        (Estimates.noise - qCMOS.OFFSET) * qCMOS.CONVERSION_FACTOR
+        (Estimates.background - qCMOS.OFFSET) * qCMOS.CONVERSION_FACTOR
         ```
         or
         ```
-        qCMOS.convert2photons(Estimates.noise)
+        qCMOS.convert2photons(Estimates.background)
         ```
     '''
     cropped_data: np.ndarray

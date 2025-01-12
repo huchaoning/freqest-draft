@@ -4,9 +4,24 @@ from math import pi, tau
 
 
 
-class CFIM:
-    def __init__(self) -> None:
-        pass
+class FrequencyCFI:
+    def __init__(self, measurement, N=50, sigma=_Share.SIGMA):
+        self.measurement = measurement
+
+        self.N = N
+        self.sigma = sigma
+
+    def _s(self, n, freq, A):
+        return A * np.sin(tau * freq * n)
+
+    def _ds(self, n, freq, A):
+        return A * tau * n * np.cos(tau * freq * n)
+
+    def cal(self, freq, A, imperfect):
+        n = np.arange(self.N)
+        s_list = self._s(n, freq, A)
+        return np.sum(self.measurement.gamma(s_list, *imperfect) * self._ds(n, freq, A) ** 2) / self.sigma**2
+
 
 
 

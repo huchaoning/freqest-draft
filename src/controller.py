@@ -77,7 +77,7 @@ class EasyDcam(Dcam):
         self.prop_setvalue(DCAM_IDPROP.SUBARRAYMODE,  2)
 
 
-    def ez_wait_capture(self, timeout=18446744073709551616):
+    def ez_wait_capture(self, timeout=int(2**31 - 1)):
         while True:
             if self.wait_event(DCAMWAIT_CAPEVENT.CYCLEEND, timeout) is not False:
                 break
