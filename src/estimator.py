@@ -27,6 +27,7 @@ def freq_estimator(sample: np.ndarray, method='lse', zero_padding=0, window_type
         return tau * n * np.cos(tau * f * n)
     
     def _residual(f):
+        n = np.arange(len(sample), dtype=np.float64)
         return np.sum((sample - _waveform(n, f)) ** 2)
 
     l = len(sample)
@@ -65,7 +66,7 @@ def freq_estimator(sample: np.ndarray, method='lse', zero_padding=0, window_type
 
     if method.lower() == 'brute':
         # Brute-force search for the initial frequency
-        search_range = (0.08, 0.42)
+        search_range = (0.05, 0.45)
         grid_points = 256
 
         search_grid = (slice(search_range[0], search_range[1], (search_range[1] - search_range[0]) / grid_points),)
@@ -75,10 +76,37 @@ def freq_estimator(sample: np.ndarray, method='lse', zero_padding=0, window_type
 
     elif method.lower() == 'lse':
         # Use LSE as frequency estimator. 
-        # Note that LSE and MLE are the same in WGN.
+        # Note that this LSE is an non-linear LSE.
         n = np.arange(len(sample), dtype=np.float64)
         popt, _= curve_fit(_waveform, xdata=n, ydata=sample, p0=pre_freq_est, maxfev=1000, jac=_grad_waveform)
         return popt.item()
+    
+    elif method.lower() == 'mle':
+        # Use MLE as frequency estimator. (Kay1993)
+        N = len(sample)
+        n = np.arange(N, dtype=np.float64)
+        # _I = lambda f: - np.abs((sample * np.exp(-2j*np.pi*f*n)).sum())**2 / N
+        def _I(f):
+            exr1 = np.sum(sample * np.cos(2*np.pi * f * n))
+            exr2 = np.sum(sample * np.sin(2*np.pi * f * n) * n)
+
+            exr3 = np.sum(sample * np.sin(2*np.pi * f * n))
+            exr4 = np.sum(sample * np.cos(2*np.pi * f * n) * n)
+
+            return - np.abs((sample * np.exp(-2j*np.pi*f*n)).sum())**2 / N, \
+                    2*np.pi/N * (exr1*exr2 - exr3*exr4)
+
+        result = minimize(_I, 
+                          pre_freq_est,
+                          bounds = [(0.05, 0.45)], 
+                          tol = 1e-8, 
+                          options = {'maxls': 100},
+                          jac=True)
+
+        if result.success:
+            return result.x.item()
+        else:
+            raise RuntimeError(f'not converged: {result.message}')
 
     else:
         raise ValueError('method must be lse or fft')

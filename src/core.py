@@ -102,17 +102,17 @@ class MetaData(_Repr):
         if self.methods is None:
             if self.estimating.lower() == 'frequency':
                 if self.measurement.lower() == 'di':
-                    self.methods = ('mle', 'lse') if self.pwm_duty == 0 else ('mle', 'lse')
+                    self.methods = ('mle', 'mle') if self.pwm_duty == 0 else ('mle', 'mle')
                 elif self.measurement.lower() == 'spade':
-                    self.methods = ('mle', 'lse') if self.pwm_duty == 0 else ('mle', 'lse')
+                    self.methods = ('mle', 'mle') if self.pwm_duty == 0 else ('mle', 'mle')
                 else:
                     raise ValueError('measurement must be DI or SPADE')
             
             elif self.estimating.lower() == 'velocity':
                 if self.measurement.lower() == 'di':
-                    self.methods = ('mle', 'lse') if self.pwm_duty == 0 else ('mle', 'lse')
+                    self.methods = ('mle', 'mle') if self.pwm_duty == 0 else ('mle', 'mle')
                 elif self.measurement.lower() == 'spade':
-                    self.methods = ('mle', 'lse') if self.pwm_duty == 0 else ('mle', 'lse')
+                    self.methods = ('mle', 'mle') if self.pwm_duty == 0 else ('mle', 'mle')
                 else:
                     raise ValueError('measurement must be DI or SPADE')
             
