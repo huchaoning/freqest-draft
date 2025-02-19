@@ -6,7 +6,7 @@ import gc
 
 from dataclasses import dataclass
 
-from .estimator import *
+# from .estimator import *
 
 
 __all__ = [
@@ -81,43 +81,29 @@ class MetaData(_Repr):
 
     Parameters:
         measurement (str): The type of measurement, 'SPADE' or 'DI'.
-        ground_truth (float): The ground truth value, frequency (frames/s) or velocity (um/s).
-        estimating (str): Deciding to estimate frequency or velocity. 
+        ground_truth (float): The ground truth value (frames/s).
 
-        amplitude (float, optional): The amplitude value. Keep it None if estimating velocity.
+        amplitude (float): The amplitude value (um).
         pwm_duty (int, optional): The PWM duty cycle. Defaults to 0.
         methods (str, optional): Estimation algorithm. Keep it None, and the program will decide automatically.
         timestamp (np.ndarray, optional): Keep it None if simulating.
     '''
     measurement: str
     ground_truth: float
-    estimating: str
+    amplitude: float
 
-    amplitude: float = None
     pwm_duty: int = 0
     methods: str = None
     timestamp: np.ndarray = None
 
     def __post_init__(self):
         if self.methods is None:
-            if self.estimating.lower() == 'frequency':
-                if self.measurement.lower() == 'di':
-                    self.methods = ('mle', 'mle') if self.pwm_duty == 0 else ('mle', 'mle')
-                elif self.measurement.lower() == 'spade':
-                    self.methods = ('mle', 'mle') if self.pwm_duty == 0 else ('mle', 'mle')
-                else:
-                    raise ValueError('measurement must be DI or SPADE')
-            
-            elif self.estimating.lower() == 'velocity':
-                if self.measurement.lower() == 'di':
-                    self.methods = ('mle', 'mle') if self.pwm_duty == 0 else ('mle', 'mle')
-                elif self.measurement.lower() == 'spade':
-                    self.methods = ('mle', 'mle') if self.pwm_duty == 0 else ('mle', 'mle')
-                else:
-                    raise ValueError('measurement must be DI or SPADE')
-            
+            if self.measurement.lower() == 'di':
+                self.methods = ('mle', 'mle') if self.pwm_duty == 0 else ('mle', 'mle')
+            elif self.measurement.lower() == 'spade':
+                self.methods = ('mle', 'mle') if self.pwm_duty == 0 else ('mle', 'mle')
             else:
-                raise ValueError('estimating must be frequency or velocity')
+                raise ValueError("measurement must be 'SPADE' or 'DI'")
 
     def __repr__(self):
         return super().__repr__()
@@ -126,7 +112,7 @@ class MetaData(_Repr):
 @dataclass
 class Estimates(_Repr):
     '''
-        NOTE: Only `photons` is in unit of photon number, other data related to photon count are in unit of ADU.
+        NOTE: All the data related to photon count are in unit of ADU.
 
         EXAMPLE: If you want to know the photon number of background, you needs to 
         ```
@@ -143,10 +129,10 @@ class Estimates(_Repr):
 
     estimates_a: np.ndarray = None
     estimates_b: np.ndarray = None
+    estimates_c: np.ndarray = None
 
     time_domain: np.ndarray = None
     photons: np.ndarray = None
-
 
     def savez(self, dirname):
         dirname = os.path.expanduser(dirname)
@@ -155,11 +141,8 @@ class Estimates(_Repr):
         m = self.metadata.measurement.lower()
         d = self.metadata.pwm_duty
 
-        if self.metadata.estimating.lower() == 'frequency':
-            px = round(self.metadata.amplitude / DMD.PIXEL_SIZE * 2)
-            filename = os.path.join(dirname, f'{m}_{px}px_f{truth}_d{d}.npz')
-        elif self.metadata.estimating.lower() == 'velocity':
-            filename = os.path.join(dirname, f'{m}_v{truth}_d{d}.npz')
+        px = round(self.metadata.amplitude / DMD.PIXEL_SIZE * 2)
+        filename = os.path.join(dirname, f'{m}_{px}px_f{truth}_d{d}.npz')
 
         if os.path.exists(filename): 
             raise FileExistsError(f'{filename} already exists')
@@ -187,7 +170,6 @@ def LoadEstimates(file):
 
 
 
-
 ######################
 #    Measurements    #
 ######################
@@ -200,7 +182,7 @@ class _Share:
 
             temp = self.raw[..., :-4, :]
             self.background = (temp[..., :5,   :5].mean((-1, -2)) + temp[..., -5:,   :5].mean((-1, -2))  + 
-                          temp[..., :5, -5: ].mean((-1, -2)) + temp[..., -5:, -5: ].mean((-1, -2))) / 4
+                               temp[..., :5, -5: ].mean((-1, -2)) + temp[..., -5:, -5: ].mean((-1, -2))) / 4
             del raw, temp
             self.crop()
 
@@ -212,32 +194,28 @@ class _Share:
             raise ValueError('When raw is not given, cropped and background must be given. When raw is given, cropped and background will be ignored.')
 
 
-    def est_all(self):
-        if self.meta.estimating.lower() == 'velocity':
-            self.td = td_estimator(self.__class__.__name__, self.cropped, self.background, self.meta.methods[0], standardize=False)
-            _result = np.array([velocity_estimator(sample, self.meta.methods[1]) for sample in self.td])
-            self.theta_a, self.theta_a = _result[:, 0], _result[:, 1]
+    # def est_all(self):
+    #     self.td = td_estimator(self.__class__.__name__, self.cropped, self.background, self.meta.methods[0], standardize=True)
+    #     zero_padding = 512 if self.meta.pwm_duty == 0 else 0 # no padding to avoid interference when noisy; pad if 0noise
+    #     self.theta_a = np.array([freq_estimator(sample, self.meta.methods[1], zero_padding) for sample in self.td])
 
-        elif self.meta.estimating.lower() == 'frequency':
-            self.td = td_estimator(self.__class__.__name__, self.cropped, self.background, self.meta.methods[0], standardize=True)
-            zero_padding = 512 if self.meta.pwm_duty == 0 else 0 # no padding to avoid interference when noisy; pad if 0noise
-            self.theta_a = np.array([freq_estimator(sample, self.meta.methods[1], zero_padding) for sample in self.td])
-            self.theta_b = None
+    #     #######  TBD  #######
+    #     self.theta_b = None # A
+    #     self.theta_c = None # Phi
 
-        self.estimates = Estimates( cropped_data = self.cropped, 
-                                    metadata = self.meta,
+    #     self.estimates = Estimates( cropped_data = self.cropped, 
+    #                                 metadata = self.meta,
            
-                                    estimates_a = self.theta_a,
-                                    estimates_b = self.theta_b,
+    #                                 estimates_a = self.theta_a,
+    #                                 estimates_b = self.theta_b,
+    #                                 estimates_c = self.theta_c,
 
-                                    time_domain = self.td, 
-                                    photons = qCMOS.convert2photons(self.cropped, 0).sum(-1),
-
-                                    background = self.background)
-
+    #                                 time_domain = self.td,
+    #                                 background = qCMOS.convert2photons(self.background, 0).mean())
 
 
-class SPADE(_Share):
+
+class SPADE(_Share): # with PM-mode
     X_AXIS = 89
     POINT_1 = 406
     POINT_2 = 116
@@ -246,6 +224,14 @@ class SPADE(_Share):
 
     def crop(self):
         self.cropped = self.raw[..., (self.POINT_1, self.POINT_2), self.X_AXIS]
+
+    @classmethod
+    def gamma(cls, s, b):
+        xi = s / (2 * cls.SIGMA)
+        uk = lambda k: 1 / 2 * (xi + k)**2 * np.exp(-xi**2) + b
+        duk = lambda k: - 1 / (2 * cls.SIGMA) * (xi + k) * (xi**2 + k * xi - 1) * np.exp(-xi**2)
+
+        return np.array([1 / uk(k) * duk(k)**2 for k in (-1, 1)]).sum(0)
 
 
 
@@ -257,12 +243,8 @@ class DI(_Share):
 
     def __init__(self, *args, **kwargs):
         meta: MetaData = kwargs['metadata']
-        if not meta.estimating.lower() == 'frequency':
-            self.lower_bound = int(np.ceil(self.CENTER + 4*self.SIGMA / qCMOS.PIXEL_SIZE))
-            self.upper_bound = int(np.ceil(self.CENTER - (2*meta.amplitude + 4*self.SIGMA) / qCMOS.PIXEL_SIZE))  
-        elif not meta.estimating.lower() == 'velocity':
-            self.lower_bound = int(np.ceil(self.CENTER + (5*DMD.PIXEL_SIZE + 4*self.SIGMA) / qCMOS.PIXEL_SIZE))
-            self.upper_bound = int(np.ceil(self.CENTER - (5*DMD.PIXEL_SIZE + 4*self.SIGMA) / qCMOS.PIXEL_SIZE))
+        self.lower_bound = int(np.ceil(self.CENTER + 4*self.SIGMA / qCMOS.PIXEL_SIZE))
+        self.upper_bound = int(np.ceil(self.CENTER - (2*meta.amplitude + 4*self.SIGMA) / qCMOS.PIXEL_SIZE))  
 
         self.detectors = self.lower_bound - self.upper_bound
         super().__init__(*args, **kwargs)
@@ -290,20 +272,9 @@ class DI(_Share):
         duk = 1/(cls.SIGMA*(tau**0.5)) * (-np.exp(-zp**2) + np.exp(-zn**2))
 
         if ndim == 0:
-            return cls.SIGMA**2 * (1 / uk * duk**2).sum()
+            return (1 / uk * duk**2).sum()
         else:
-            return cls.SIGMA**2 * (1 / uk * duk**2).sum(-1)
-
-
-class BiSPADE(_Share):
-    @classmethod
-    def gamma(cls, s, b):
-        xi = s / (2 * cls.SIGMA)
-        uk = lambda k: 1 / 2 * (xi + k)**2 * np.exp(-xi**2) + b
-        duk = lambda k: - 1 / (2 * cls.SIGMA) * (xi + k) * (xi**2 + k * xi - 1) * np.exp(-xi**2)
-
-        return cls.SIGMA**2 * np.array([1 / uk(k) * duk(k)**2 for k in (-1, 1)]).sum(0)
-
+            return (1 / uk * duk**2).sum(-1)
 
 
 
@@ -318,7 +289,7 @@ class Estimation:
         elif metadata.measurement.upper() == 'DI':
             expt = DI(raw=raw, metadata=metadata)
         else:
-            raise ValueError('measurement must be SPADE or DI')
+            raise ValueError("measurement must be 'SPADE' or 'DI'")
         
         del raw
 
@@ -337,12 +308,11 @@ class Estimation:
         elif c.metadata.measurement.upper() == 'DI':
             expt = DI(cropped=c.cropped_data, background=c.background, metadata=c.metadata)
         else:
-            raise ValueError('measurement must be SPADE or DI')
+            raise ValueError("measurement must be 'SPADE' or 'DI'")
 
         gc.collect()
         expt.est_all()
         return expt.estimates
-
 
 
 
@@ -382,10 +352,8 @@ class Simulator:
             return self.meta.amplitude * (_k - 1)
         elif self.waveform.lower() == 'sin':
             return self.meta.amplitude * (np.sin(tau * fo * (t + self.delay)) - 1)
-        elif self.waveform.lower() == 'linear':
-            return self.meta.ground_truth * (t + 1e-6 + self.delay) - 5 * DMD.PIXEL_SIZE
         else:
-            raise ValueError('waveform must be sign or sin')
+            raise ValueError("waveform must be 'sign' or 'sin'")
 
 
     def gen(self, photons=None, noise=0, sample_length=None):
@@ -420,7 +388,6 @@ class Simulator:
                 _loc = self.loc(n) / qCMOS.PIXEL_SIZE
                 _sig = DI.SIGMA / qCMOS.PIXEL_SIZE
 
-                # (lower_bound, upper_bound), detectors = DI.crop_bound(self.meta.amplitude)
                 detectors = 230
 
                 return np.histogram(np.random.normal(detectors/2+_loc, _sig, photons), 

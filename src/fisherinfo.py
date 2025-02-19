@@ -20,7 +20,7 @@ class FrequencyCFI:
     def cal(self, freq, A, imperfect):
         n = np.arange(self.N)
         s_list = self._s(n, freq, A)
-        return np.sum(self.measurement.gamma(s_list, *imperfect) * self._ds(n, freq, A) ** 2) / self.sigma**2
+        return np.sum(self.measurement.gamma(s_list, *imperfect) * self._ds(n, freq, A) ** 2)
 
 
 
