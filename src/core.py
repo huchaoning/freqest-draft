@@ -16,7 +16,6 @@ __all__ = [
 
     'SPADE',
     'DI',
-    'BiSPADE',
 
     'MetaData',
     'Estimates',
@@ -85,25 +84,12 @@ class MetaData(_Repr):
 
         amplitude (float): The amplitude value (um).
         pwm_duty (int, optional): The PWM duty cycle. Defaults to 0.
-        methods (str, optional): Estimation algorithm. Keep it None, and the program will decide automatically.
-        timestamp (np.ndarray, optional): Keep it None if simulating.
     '''
     measurement: str
     ground_truth: float
     amplitude: float
 
     pwm_duty: int = 0
-    methods: str = None
-    timestamp: np.ndarray = None
-
-    def __post_init__(self):
-        if self.methods is None:
-            if self.measurement.lower() == 'di':
-                self.methods = ('mle', 'mle') if self.pwm_duty == 0 else ('mle', 'mle')
-            elif self.measurement.lower() == 'spade':
-                self.methods = ('mle', 'mle') if self.pwm_duty == 0 else ('mle', 'mle')
-            else:
-                raise ValueError("measurement must be 'SPADE' or 'DI'")
 
     def __repr__(self):
         return super().__repr__()
@@ -125,14 +111,16 @@ class Estimates(_Repr):
     '''
     cropped_data: np.ndarray
     metadata: MetaData
+
     background: np.ndarray
+    photons: np.ndarray = None
+
+    time_domain: np.ndarray = None
 
     estimates_a: np.ndarray = None
     estimates_b: np.ndarray = None
     estimates_c: np.ndarray = None
 
-    time_domain: np.ndarray = None
-    photons: np.ndarray = None
 
     def savez(self, dirname):
         dirname = os.path.expanduser(dirname)
@@ -149,16 +137,13 @@ class Estimates(_Repr):
 
         np.savez_compressed(filename, **self.__dict__)
 
-    @classmethod
-    def load(cls, file):
-        return LoadEstimates(file)
-    
+
     def __repr__(self):
         return super().__repr__()
 
 
 
-def LoadEstimates(file):
+def LoadEstimates(file) -> Estimates:
     file = os.path.expanduser(file)
     npz = np.load(file, allow_pickle=True)
     dic = {}
@@ -167,6 +152,31 @@ def LoadEstimates(file):
         if k.lower() == 'metadata':
             dic[k] = npz[k].item()
     return Estimates(**dic)
+
+
+
+def NewEstimates(raw_path: str, metadata: MetaData) -> Estimates:
+    if os.path.exists(raw_path):
+        raw = np.load(raw_path)
+    else:
+        raise FileNotFoundError(f".npy file '{raw_path}' not found")
+
+    raw = raw.astype(float)
+
+    temp = raw[..., :-4, :]
+    background = (temp[..., :5,   :5].mean((-1, -2)) + temp[..., -5:,   :5].mean((-1, -2))  + 
+                  temp[..., :5, -5: ].mean((-1, -2)) + temp[..., -5:, -5: ].mean((-1, -2))) / 4
+
+
+    if metadata.measurement.lower() == 'di':
+        lower_bound = int(np.ceil(DI.CENTER + 4*DI.SIGMA / qCMOS.PIXEL_SIZE))
+        upper_bound = int(np.ceil(DI.CENTER - (2*metadata.amplitude + 4*DI.SIGMA) / qCMOS.PIXEL_SIZE))  
+        cropped = raw[..., upper_bound:lower_bound, DI.X_AXIS]
+
+    elif metadata.measurement.lower() == 'spade':
+        cropped = raw[..., (SPADE.POINT_1, SPADE.POINT_2), SPADE.X_AXIS]
+
+    return Estimates(cropped, metadata, background)
 
 
 
@@ -222,9 +232,6 @@ class SPADE(_Share): # with PM-mode
 
     ROI = {'X0': 2128, 'Y0': 720, 'W': 180, 'H': 500}
 
-    def crop(self):
-        self.cropped = self.raw[..., (self.POINT_1, self.POINT_2), self.X_AXIS]
-
     @classmethod
     def gamma(cls, s, b):
         xi = s / (2 * cls.SIGMA)
@@ -240,17 +247,6 @@ class DI(_Share):
     CENTER = 113
     
     ROI = {'X0': 1440, 'Y0': 876, 'W': 160, 'H': 228}
-
-    def __init__(self, *args, **kwargs):
-        meta: MetaData = kwargs['metadata']
-        self.lower_bound = int(np.ceil(self.CENTER + 4*self.SIGMA / qCMOS.PIXEL_SIZE))
-        self.upper_bound = int(np.ceil(self.CENTER - (2*meta.amplitude + 4*self.SIGMA) / qCMOS.PIXEL_SIZE))  
-
-        self.detectors = self.lower_bound - self.upper_bound
-        super().__init__(*args, **kwargs)
-
-    def crop(self):
-        self.cropped = self.raw[..., self.upper_bound:self.lower_bound, self.X_AXIS]
 
     @classmethod
     def gamma(cls, s, b, a=qCMOS.PIXEL_SIZE, regin=np.inf):
