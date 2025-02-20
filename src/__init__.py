@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 
 from mpl_toolkits.axes_grid1.inset_locator import mark_inset
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
-import matplotlib.ticker as ticker
+from matplotlib.ticker import AutoMinorLocator, ScalarFormatter
 
 from matplotlib_inline import backend_inline
 backend_inline.set_matplotlib_formats('svg')
@@ -15,12 +15,16 @@ del fontManager
 plt.rcdefaults()
 plt.rcParams['font.family'] = 'Latin Modern Roman'
 plt.rcParams['mathtext.fontset'] = 'cm'
+plt.rcParams['font.size'] = 7
+plt.rcParams['savefig.bbox'] = 'tight'
 
 
+from math import tau, pi
 import numpy as np
 from tqdm import tqdm
 from time import sleep
 import os
+from glob import glob
 
 from datetime import datetime
 today = datetime.strftime(datetime.today(), '%Y%m%d')

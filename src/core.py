@@ -204,7 +204,7 @@ def NewEstimates(raw_path: str, metadata: MetaData, photons = None) -> Estimates
         raise ValueError('PWM duty is not 0, photons is needed.')
 
     # Method 2
-    background = qCMOS.convert2photons(cropped).sum(-1).mean() - photons_
+    background = (qCMOS.convert2photons(cropped).sum(-1).mean() - photons_) / cropped.shape[-1]
 
     return Estimates(cropped, metadata, background, photons_)
 
@@ -217,6 +217,30 @@ def NewEstimates(raw_path: str, metadata: MetaData, photons = None) -> Estimates
 ######################
 class _Share:
     SIGMA = 103 #um
+    SAMPLE_LENGTH = 50
+
+    @classmethod
+    def CFIM(cls, b, A, f, phi=0, nu=1):
+        n = np.arange(cls.SAMPLE_LENGTH)
+        alpha = tau * f * n + phi
+
+        s  = A * np.sin(alpha)
+        da = np.sin(alpha)
+        db = A*tau*n * np.cos(alpha)
+        dc = A * np.cos(alpha)
+
+        matrix = np.array(
+            [[da*da, da*db, da*dc],
+             [db*da, db*db, db*dc],
+             [dc*da, dc*db, dc*dc]]
+        )
+
+        return (cls.gamma(s, b/nu) * np.ones((3, 3, 50)) * matrix).sum(-1)
+
+    @classmethod
+    def CRB(cls, b, A, f, phi=0, nu=1):
+        return np.linalg.inv(cls.CFIM(b, A, f, phi, nu))
+
 
 
 class SPADE(_Share): # with PM-mode
