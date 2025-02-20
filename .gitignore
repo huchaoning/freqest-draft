@@ -8,8 +8,10 @@ __raw__/
 __v_est__/
 .DS_Store
 
+data/
 old/
 MLEtest/
 MLEtest(SIM)/
 
 TEMP/
+

@@ -60,7 +60,7 @@ def td_est(estimates_instance):
                 return - np.sum(frame * np.log(uk) - uk - (frame * np.log(frame) - frame)), \
                        - I0/(_sig*tau**0.5) * np.sum((-np.exp(-z1**2) + np.exp(-z2**2)) * (frame/uk - 1))
             return wrapper
-    
+
 
     # minimize nll
     time_domain = []
