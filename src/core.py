@@ -106,9 +106,9 @@ class Estimates(_Repr):
     A data class to store all data and estimates.
 
     Parameters:
-        cropped_data (np.ndarray, unit: ADU): Raw data is a 2D image, we used only 1D data cropped from raw data.
         metadata (MetaData): MetaData instance.
-
+        
+        cropped_data (np.ndarray, unit: ADU): Raw data is a 2D image, we used only 1D data cropped from raw data.
         background (float, unit: photons): Averaged background photons noise per pixel.
         photons (float, unit: photons): Averaged total signal photons used for estimation.
 
@@ -118,9 +118,10 @@ class Estimates(_Repr):
         estimates_b (np.ndarray): The f estimates. A * sin(2 * pi * f * n + phi)
         estimates_c (np.ndarray): The phi estimates. A * sin(2 * pi * f * n + phi)
     '''
-    cropped_data: np.ndarray
+
     metadata: MetaData
 
+    cropped_data: np.ndarray
     background: float
     photons: float
 
