@@ -147,6 +147,7 @@ class Estimates(_Repr):
         if os.path.exists(filename): 
             raise FileExistsError(f'{filename} already exists')
 
+        self.cropped_data = self.cropped_data.astype(np.uint16)
         np.savez_compressed(filename, **self.__dict__)
 
 
@@ -161,13 +162,15 @@ def LoadEstimates(file) -> Estimates:
     dic = {}
     for k in npz.files:
         dic[k] = npz[k]
+        if k.lower() == 'cropped_data':
+            dic[k] = npz[k].astype(float)
         if k.lower() == 'metadata':
             dic[k] = npz[k].item()
     return Estimates(**dic)
 
 
 
-def NewEstimates(raw_path: str, metadata: MetaData, photons: float = None) -> Estimates:
+def NewEstimates(raw_path: str, metadata: MetaData, photons = None) -> Estimates:
     if os.path.exists(raw_path):
         raw = np.load(raw_path)
     else:
@@ -175,11 +178,13 @@ def NewEstimates(raw_path: str, metadata: MetaData, photons: float = None) -> Es
 
     raw = raw.astype(float)
 
-    temp = raw[..., :-4, :]
-    background = (temp[..., :5,   :5].mean((-1, -2)) + temp[..., -5:,   :5].mean((-1, -2))  + 
-                  temp[..., :5, -5: ].mean((-1, -2)) + temp[..., -5:, -5: ].mean((-1, -2))) / 4
-    background = qCMOS.convert2photons(background).mean()
-    
+    # # Method 1
+    # temp = raw[..., :-4, :]
+    # background = (temp[..., :5,   :5].mean((-1, -2)) + temp[..., -5:,   :5].mean((-1, -2))  +
+    #               temp[..., :5, -5: ].mean((-1, -2)) + temp[..., -5:, -5: ].mean((-1, -2))) / 4
+    # background = qCMOS.convert2photons(background).mean()
+
+
     if metadata.measurement.lower() == 'di':
         lower_bound = int(np.ceil(DI.CENTER + 4*DI.SIGMA / qCMOS.PIXEL_SIZE))
         upper_bound = int(np.ceil(DI.CENTER - (2*metadata.amplitude + 4*DI.SIGMA) / qCMOS.PIXEL_SIZE))  
@@ -188,7 +193,7 @@ def NewEstimates(raw_path: str, metadata: MetaData, photons: float = None) -> Es
     elif metadata.measurement.lower() == 'spade':
         cropped = raw[..., (SPADE.POINT_1, SPADE.POINT_2), SPADE.X_AXIS]
 
-    if (metadata.pwm_duty == 0) and (photons is None):
+    if metadata.pwm_duty == 0:
         photons_ = qCMOS.convert2photons(cropped).sum(-1).mean()
 
     elif photons is not None:
@@ -196,6 +201,9 @@ def NewEstimates(raw_path: str, metadata: MetaData, photons: float = None) -> Es
 
     else:
         raise ValueError('PWM duty is not 0, photons is needed.')
+
+    # Method 2
+    background = qCMOS.convert2photons(cropped).sum(-1).mean() - photons_
 
     return Estimates(cropped, metadata, background, photons_)
 
