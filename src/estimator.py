@@ -1,11 +1,15 @@
-from math import tau, pi
+from math import pi, tau
 import numpy as np
-from scipy.optimize import curve_fit, minimize
+from scipy.optimize import minimize
 from scipy.special import erf
 
+__all__ = [
+    'td_est',
+    'freq_est'
+]
 
 
-def TimeDomainEstimator(estimates_instance):
+def td_est(estimates_instance):
     from .core import Estimates, qCMOS, SPADE, DI
     c: Estimates = estimates_instance
 
@@ -35,7 +39,7 @@ def TimeDomainEstimator(estimates_instance):
                          np.sum(I0/(2*_sig) * np.exp(-xi**2)*((xi + k) * (xi**2 + k*xi - 1) * (frame/_uk(k, theta) - 1)))
             return wrapper
 
-    # DI
+    # DI (Ref. [1])
     elif c.metadata.measurement.lower() == 'di':
         _sig = DI.SIGMA  / qCMOS.PIXEL_SIZE
         pre_est = samples @ np.arange(pixels) / samples.sum(-1)
@@ -57,9 +61,6 @@ def TimeDomainEstimator(estimates_instance):
                        - I0/(_sig*tau**0.5) * np.sum((-np.exp(-z1**2) + np.exp(-z2**2)) * (frame/uk - 1))
             return wrapper
     
-    else:
-        raise ValueError("measurement must be 'SPADE' or 'DI'")
-
 
     # minimize nll
     time_domain = []
@@ -86,3 +87,79 @@ def TimeDomainEstimator(estimates_instance):
         c.time_domain = (c.time_domain - pixels/2) * qCMOS.PIXEL_SIZE
 
     return c
+
+
+
+
+
+def freq_est(estimates_instance):
+    from .core import Estimates
+    c: Estimates = estimates_instance
+
+    estimates_a, estimates_b, estimates_c = [], [], []
+
+    for sample in c.time_domain:
+        # Use FFT as pre-estimator, zero-padding to increase frequency resolution
+        # No padding to avoid interference when noisy
+        N = len(sample)
+        n = N + 512 if c.metadata.pwm_duty == 0 else N
+
+        fft = np.abs(np.fft.fft(sample, n=n))[:n // 2]
+        freq = np.fft.fftfreq(n, 1)[:n // 2]
+
+        # Find the peak in the FFT
+        peak_index = np.argmax(fft[1:]) + 1
+        pre_est = freq[peak_index]
+
+        # Use MLE as frequency estimator. (Ref. [2])
+        n = np.arange(N, dtype=np.float64)
+        def _I(f):
+            expr1 = np.sum(sample * np.cos(tau * f * n))
+            expr2 = np.sum(sample * np.sin(tau * f * n) * n)
+
+            expr3 = np.sum(sample * np.sin(tau * f * n))
+            expr4 = np.sum(sample * np.cos(tau * f * n) * n)
+
+            return - np.abs((sample * np.exp(-2j*pi * f * n)).sum())**2 / N, \
+                     tau / N * (expr1*expr2 - expr3*expr4)
+
+        result = minimize(_I, 
+                          pre_est,
+                          bounds = [(0.05, 0.45)], 
+                          tol = 1e-8, 
+                          options = {'maxls': 100},
+                          jac=True)
+
+        if result.success:
+            f = result.x.item()
+            A = (2/N) * np.abs((sample * np.exp(-2j*pi * f * n)).sum())
+            phi = np.arctan(np.sum(sample * np.cos(tau * f * n) * n) / np.sum(sample * np.sin(tau * f * n) * n))
+
+            estimates_a.append(A)
+            estimates_b.append(f)
+            estimates_c.append(phi)
+        else:
+            raise RuntimeError(f'not converged: {result.message}')
+
+    c.estimates_a = np.array(estimates_a)
+    c.estimates_b = np.array(estimates_b)
+    c.estimates_c = np.array(estimates_c)
+
+    return c
+
+
+
+    
+
+'''
+Ref. [1]:
+ Carlas S Smith, Nikolai Joseph, Bernd Rieger, et al. 2010. 
+ Fast, single-molecule localization that achieves theoretically minimum uncertainty[J/OL]. 
+ Nature Methods, April 2010, 7(5): 373-375. https://doi.org/10.1038/nmeth.1449.
+
+
+Ref. [2]:
+ Steven M. Kay. 1993. 
+ Fundamentals of Statistical Signal Processing, Volume I: Estimation Theory, 1993[M].
+ Pearson.
+'''

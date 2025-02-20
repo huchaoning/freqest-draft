@@ -2,12 +2,9 @@ import os
 from math import tau, pi
 import numpy as np
 import scipy as sp
-import gc
 
 from dataclasses import dataclass
-
-# from .estimator import *
-
+from .estimator import *
 
 __all__ = [
     'qCMOS',
@@ -20,10 +17,13 @@ __all__ = [
     'MetaData',
     'Estimates',
     'LoadEstimates',
-    'Estimation',
+    'NewEstimates',
 
     'Simulator'
 ]
+
+
+
 
 
 #################### 
@@ -66,6 +66,7 @@ class SLM:
 
 
 
+
 ######################
 #      Data Cls      #
 ######################
@@ -80,9 +81,9 @@ class MetaData(_Repr):
 
     Parameters:
         measurement (str): The type of measurement, 'SPADE' or 'DI'.
-        ground_truth (float): The ground truth value (frames/s).
+        ground_truth (float): The ground truth value of frequency.
 
-        amplitude (float): The amplitude value (um).
+        amplitude (float, unit: um): The amplitude value ().
         pwm_duty (int, optional): The PWM duty cycle. Defaults to 0.
     '''
     measurement: str
@@ -91,6 +92,10 @@ class MetaData(_Repr):
 
     pwm_duty: int = 0
 
+    def __post_init__(self):
+        if self.measurement.lower() not in ('spade', 'di'):
+            raise ValueError("measurement must be 'SPADE' or 'DI'")
+
     def __repr__(self):
         return super().__repr__()
 
@@ -98,28 +103,35 @@ class MetaData(_Repr):
 @dataclass
 class Estimates(_Repr):
     '''
-        NOTE: All the data related to photon count are in unit of ADU.
+    A data class to store all data and estimates.
 
-        EXAMPLE: If you want to know the photon number of background, you needs to 
-        ```
-        (Estimates.background - qCMOS.OFFSET) * qCMOS.CONVERSION_FACTOR
-        ```
-        or
-        ```
-        qCMOS.convert2photons(Estimates.background)
-        ```
+    Parameters:
+        cropped_data (np.ndarray, unit: ADU): Raw data is a 2D image, we used only 1D data cropped from raw data.
+        metadata (MetaData): MetaData instance.
+
+        background (float, unit: photons): Averaged background photons noise per pixel.
+        photons (float, unit: photons): Averaged total signal photons used for estimation.
+
+        time_domain (np.ndarray): Time domain signal estimated by MLE localization algorithm.
+
+        estimates_a (np.ndarray, unit: um): The A estimates. A * sin(2 * pi * f * n + phi)
+        estimates_b (np.ndarray): The f estimates. A * sin(2 * pi * f * n + phi)
+        estimates_c (np.ndarray): The phi estimates. A * sin(2 * pi * f * n + phi)
     '''
     cropped_data: np.ndarray
     metadata: MetaData
 
-    background: np.ndarray
-    photons: np.ndarray = None
+    background: float
+    photons: float
 
     time_domain: np.ndarray = None
 
     estimates_a: np.ndarray = None
     estimates_b: np.ndarray = None
     estimates_c: np.ndarray = None
+
+    def est(self):
+        return freq_est(td_est(self))
 
 
     def savez(self, dirname):
@@ -155,7 +167,7 @@ def LoadEstimates(file) -> Estimates:
 
 
 
-def NewEstimates(raw_path: str, metadata: MetaData) -> Estimates:
+def NewEstimates(raw_path: str, metadata: MetaData, photons: float = None) -> Estimates:
     if os.path.exists(raw_path):
         raw = np.load(raw_path)
     else:
@@ -166,8 +178,8 @@ def NewEstimates(raw_path: str, metadata: MetaData) -> Estimates:
     temp = raw[..., :-4, :]
     background = (temp[..., :5,   :5].mean((-1, -2)) + temp[..., -5:,   :5].mean((-1, -2))  + 
                   temp[..., :5, -5: ].mean((-1, -2)) + temp[..., -5:, -5: ].mean((-1, -2))) / 4
-
-
+    background = qCMOS.convert2photons(background).mean()
+    
     if metadata.measurement.lower() == 'di':
         lower_bound = int(np.ceil(DI.CENTER + 4*DI.SIGMA / qCMOS.PIXEL_SIZE))
         upper_bound = int(np.ceil(DI.CENTER - (2*metadata.amplitude + 4*DI.SIGMA) / qCMOS.PIXEL_SIZE))  
@@ -176,7 +188,18 @@ def NewEstimates(raw_path: str, metadata: MetaData) -> Estimates:
     elif metadata.measurement.lower() == 'spade':
         cropped = raw[..., (SPADE.POINT_1, SPADE.POINT_2), SPADE.X_AXIS]
 
-    return Estimates(cropped, metadata, background)
+    if (metadata.pwm_duty == 0) and (photons is None):
+        photons_ = qCMOS.convert2photons(cropped).sum(-1).mean()
+
+    elif photons is not None:
+        photons_ = photons
+
+    else:
+        raise ValueError('PWM duty is not 0, photons is needed.')
+
+    return Estimates(cropped, metadata, background, photons_)
+
+
 
 
 
@@ -185,44 +208,6 @@ def NewEstimates(raw_path: str, metadata: MetaData) -> Estimates:
 ######################
 class _Share:
     SIGMA = 103 #um
-    def __init__(self, raw=None, cropped=None, background=None, metadata: MetaData=None):
-        self.meta = metadata
-        if raw is not None:
-            self.raw = raw.astype(float)
-
-            temp = self.raw[..., :-4, :]
-            self.background = (temp[..., :5,   :5].mean((-1, -2)) + temp[..., -5:,   :5].mean((-1, -2))  + 
-                               temp[..., :5, -5: ].mean((-1, -2)) + temp[..., -5:, -5: ].mean((-1, -2))) / 4
-            del raw, temp
-            self.crop()
-
-        elif (cropped is not None) and (background is not None):
-            self.cropped = cropped
-            self.background = background
-        
-        else:
-            raise ValueError('When raw is not given, cropped and background must be given. When raw is given, cropped and background will be ignored.')
-
-
-    # def est_all(self):
-    #     self.td = td_estimator(self.__class__.__name__, self.cropped, self.background, self.meta.methods[0], standardize=True)
-    #     zero_padding = 512 if self.meta.pwm_duty == 0 else 0 # no padding to avoid interference when noisy; pad if 0noise
-    #     self.theta_a = np.array([freq_estimator(sample, self.meta.methods[1], zero_padding) for sample in self.td])
-
-    #     #######  TBD  #######
-    #     self.theta_b = None # A
-    #     self.theta_c = None # Phi
-
-    #     self.estimates = Estimates( cropped_data = self.cropped, 
-    #                                 metadata = self.meta,
-           
-    #                                 estimates_a = self.theta_a,
-    #                                 estimates_b = self.theta_b,
-    #                                 estimates_c = self.theta_c,
-
-    #                                 time_domain = self.td,
-    #                                 background = qCMOS.convert2photons(self.background, 0).mean())
-
 
 
 class SPADE(_Share): # with PM-mode
@@ -239,7 +224,6 @@ class SPADE(_Share): # with PM-mode
         duk = lambda k: - 1 / (2 * cls.SIGMA) * (xi + k) * (xi**2 + k * xi - 1) * np.exp(-xi**2)
 
         return np.array([1 / uk(k) * duk(k)**2 for k in (-1, 1)]).sum(0)
-
 
 
 class DI(_Share):
@@ -273,42 +257,6 @@ class DI(_Share):
             return (1 / uk * duk**2).sum(-1)
 
 
-
-######################
-#     Estimation     #
-######################
-class Estimation:
-    @classmethod
-    def FromRaw(cls, raw: np.ndarray, metadata: MetaData):
-        if metadata.measurement.upper() == 'SPADE':
-            expt = SPADE(raw=raw, metadata=metadata)
-        elif metadata.measurement.upper() == 'DI':
-            expt = DI(raw=raw, metadata=metadata)
-        else:
-            raise ValueError("measurement must be 'SPADE' or 'DI'")
-        
-        del raw
-
-        gc.collect()
-        expt.est_all()
-        return expt.estimates
-
-
-    @classmethod
-    def FromEstimates(cls, Estimates_instance: Estimates):
-        c: Estimates = np.copy(Estimates_instance).item()
-        del Estimates_instance
-
-        if c.metadata.measurement.upper() == 'SPADE':
-            expt = SPADE(cropped=c.cropped_data, background=c.background, metadata=c.metadata)
-        elif c.metadata.measurement.upper() == 'DI':
-            expt = DI(cropped=c.cropped_data, background=c.background, metadata=c.metadata)
-        else:
-            raise ValueError("measurement must be 'SPADE' or 'DI'")
-
-        gc.collect()
-        expt.est_all()
-        return expt.estimates
 
 
 
