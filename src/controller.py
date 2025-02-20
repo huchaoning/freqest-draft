@@ -1,5 +1,4 @@
 import os
-from math import *
 import numpy as np
 from datetime import datetime, timedelta, timezone
 from time import sleep
