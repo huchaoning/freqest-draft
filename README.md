@@ -11,7 +11,7 @@ The raw data is quite large (approximately 413 GB before compression). As a resu
 ```Python
 from src import *
 
-c = LoadEstimates('data/...') # Name a .npy file
+c = LoadEstimates('data/...') # Name a .npz file
 c.cropped_data # Cropped data
 c.estimates_b # Frequency estimates
 ```
