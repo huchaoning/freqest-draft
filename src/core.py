@@ -320,7 +320,7 @@ class Simulator:
 
         self.meta.pwm_duty = 'SIM'
 
-    def loc(self, n, delay):
+    def _loc(self, n, delay):
         fs = self.sampling_rate
         t = n / fs
         fo = fs * self.meta.ground_truth
@@ -354,31 +354,28 @@ class Simulator:
 
         if self.meta.measurement.lower() == 'spade':
             _sig = SPADE.SIGMA
-
             p1 = lambda s: (s-2*_sig)**2*np.exp(-s**2/(4*_sig**2))/(8*_sig**2)
             p2 = lambda s: (s+2*_sig)**2*np.exp(-s**2/(4*_sig**2))/(8*_sig**2)
-
-            data = [np.histogram(np.random.uniform(0, 1, photons), 
-                    bins=[0, p1(self.loc(n, delay)), p1(self.loc(n, delay)) + p2(self.loc(n, delay))])[0] for n in range(self.N)]
-
-            data = np.array(data).astype(float)
+            def _gen_one(n):
+                return np.histogram(np.random.uniform(0, 1, photons), 
+                                    [0, 
+                                     p1(self._loc(n, delay)), 
+                                     p1(self._loc(n, delay)) + p2(self._loc(n, delay))])[0]
 
         elif self.meta.measurement.lower() == 'di':
+            _sig = DI.SIGMA / qCMOS.PIXEL_SIZE
+            detectors = round((2*self.meta.amplitude + 8*DI.SIGMA) / qCMOS.PIXEL_SIZE)
             def _gen_one(n):
                 # Convert length units to camera pixel size to match experimental data.
-                _loc = self.loc(n, delay) / qCMOS.PIXEL_SIZE
-                _sig = DI.SIGMA / qCMOS.PIXEL_SIZE
-
-                detectors = round((2*self.meta.amplitude + 8*DI.SIGMA) / qCMOS.PIXEL_SIZE)
-                outcomes = np.random.normal(detectors/2+_loc, _sig, photons)
-
+                loc = self._loc(n, delay) / qCMOS.PIXEL_SIZE
+                outcomes = np.random.normal(detectors/2+loc, _sig, photons)
                 return np.histogram(outcomes, bins=detectors, range=(0, detectors))[0]
 
-            data = []
-            for _ in range(self.repeat):
-                for n in range(self.N):
-                    data.append(_gen_one(n))
-            data = np.array(data).astype(float).reshape(self.repeat, self.N, -1)
+        data = []
+        for _ in range(self.repeat):
+            for n in range(self.N):
+                data.append(_gen_one(n))
+        data = np.array(data).astype(float).reshape(self.repeat, self.N, -1)
 
         return Estimates(self.meta, 
                          np.round((data + np.random.poisson(noise, size=data.shape)) / qCMOS.CONVERSION_FACTOR + qCMOS.OFFSET),
