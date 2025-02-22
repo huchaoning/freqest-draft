@@ -58,6 +58,10 @@ class DMD:
     TRIANGLE_SEQ = np.ravel((np.array([np.arange(-5, 6), np.arange(-5, 6)])).T)[::-1][1:-1]
     TRIANGLE_SEQ = np.concatenate([TRIANGLE_SEQ, TRIANGLE_SEQ[::-1]])
 
+    @classmethod
+    def A(cls, px):
+        return px * cls.PIXEL_SIZE / 2
+
 
 class SLM:
     PIXEL_SIZE = 8 #um
@@ -95,6 +99,11 @@ class MetaData(_Repr):
     def __post_init__(self):
         if self.measurement.lower() not in ('spade', 'di'):
             raise ValueError("measurement must be 'SPADE' or 'DI'")
+        else:
+            self.measurement = self.measurement.upper()
+
+    def convert2str(self):
+        return f'{self.measurement.lower()}_{round(self.amplitude*2/DMD.PIXEL_SIZE)}px_f{self.ground_truth}_d{self.pwm_duty}'
 
     def __repr__(self):
         return super().__repr__()
@@ -113,10 +122,7 @@ class Estimates(_Repr):
         photons (float, unit: photons): Averaged total signal photons used for estimation.
 
         time_domain (np.ndarray): Time domain signal estimated by MLE localization algorithm.
-
-        estimates_a (np.ndarray, unit: um): The A estimates. A * sin(2 * pi * f * n + phi)
-        estimates_b (np.ndarray): The f estimates. A * sin(2 * pi * f * n + phi)
-        estimates_c (np.ndarray): The phi estimates. A * sin(2 * pi * f * n + phi)
+        estimates (np.ndarray): The frequency estimates. A * sin(2 * pi * f * n + phi)
     '''
 
     metadata: MetaData
@@ -126,10 +132,7 @@ class Estimates(_Repr):
     photons: float
 
     time_domain: np.ndarray = None
-
-    estimates_a: np.ndarray = None
-    estimates_b: np.ndarray = None
-    estimates_c: np.ndarray = None
+    estimates: np.ndarray = None
 
     def est(self):
         return freq_est(td_est(self))
@@ -137,13 +140,7 @@ class Estimates(_Repr):
 
     def savez(self, dirname):
         dirname = os.path.expanduser(dirname)
-        truth = self.metadata.ground_truth
-
-        m = self.metadata.measurement.lower()
-        d = self.metadata.pwm_duty
-
-        px = round(self.metadata.amplitude / DMD.PIXEL_SIZE * 2)
-        filename = os.path.join(dirname, f'{m}_{px}px_f{truth}_d{d}.npz')
+        filename = os.path.join(dirname, self.metadata.convert2str() + '.npz')
 
         if os.path.exists(filename): 
             raise FileExistsError(f'{filename} already exists')
@@ -179,11 +176,11 @@ def NewEstimates(raw_path: str, metadata: MetaData, photons = None) -> Estimates
 
     raw = raw.astype(float)
 
-    # # Method 1
-    # temp = raw[..., :-4, :]
-    # background = (temp[..., :5,   :5].mean((-1, -2)) + temp[..., -5:,   :5].mean((-1, -2))  +
-    #               temp[..., :5, -5: ].mean((-1, -2)) + temp[..., -5:, -5: ].mean((-1, -2))) / 4
-    # background = qCMOS.convert2photons(background).mean()
+    # Method 1
+    temp = raw[..., :-4, :]
+    background = (temp[..., :5,   :5].mean((-1, -2)) + temp[..., -5:,   :5].mean((-1, -2))  +
+                  temp[..., :5, -5: ].mean((-1, -2)) + temp[..., -5:, -5: ].mean((-1, -2))) / 4
+    background = qCMOS.convert2photons(background).mean()
 
 
     if metadata.measurement.lower() == 'di':
@@ -194,19 +191,22 @@ def NewEstimates(raw_path: str, metadata: MetaData, photons = None) -> Estimates
     elif metadata.measurement.lower() == 'spade':
         cropped = raw[..., (SPADE.POINT_1, SPADE.POINT_2), SPADE.X_AXIS]
 
-    if metadata.pwm_duty == 0:
-        photons_ = qCMOS.convert2photons(cropped).sum(-1).mean()
+    photons = (qCMOS.convert2photons(cropped).mean() - background) * cropped.shape[-1]
 
-    elif photons is not None:
-        photons_ = photons
+    # if metadata.pwm_duty == 0:
+    #     photons_ = qCMOS.convert2photons(cropped).sum(-1).mean()
 
-    else:
-        raise ValueError('PWM duty is not 0, photons is needed.')
+    # elif photons is not None:
+    #     photons_ = photons
+
+    # else:
+    #     raise ValueError('PWM duty is not 0, photons is needed.')
 
     # Method 2
-    background = (qCMOS.convert2photons(cropped).sum(-1).mean() - photons_) / cropped.shape[-1]
+    # ERROR
+    # background = (qCMOS.convert2photons(cropped).sum(-1).mean() - photons_) / cropped.shape[-1]
 
-    return Estimates(cropped, metadata, background, photons_)
+    return Estimates(metadata, cropped, background, photons)
 
 
 
@@ -220,27 +220,22 @@ class _Share:
     SAMPLE_LENGTH = 50
 
     @classmethod
-    def CFIM(cls, b, A, f, phi=0, nu=1):
+    def CFI(cls, b, A, f, nu=1):
+        b = np.clip(b, 1e-10, np.inf) # smoothing
         n = np.arange(cls.SAMPLE_LENGTH)
-        alpha = tau * f * n + phi
 
-        s  = A * np.sin(alpha)
-        da = np.sin(alpha)
-        db = A*tau*n * np.cos(alpha)
-        dc = A * np.cos(alpha)
+        def _cal(b, f):
+            alpha = tau * f * n
+            s  = A * np.sin(alpha)
+            ds = A*tau*n * np.cos(alpha)
+            return (cls.gamma(s, b/nu) * ds**2).sum(-1)
 
-        matrix = np.array(
-            [[da*da, da*db, da*dc],
-             [db*da, db*db, db*dc],
-             [dc*da, dc*db, dc*dc]]
-        )
-
-        return (cls.gamma(s, b/nu) * np.ones((3, 3, 50)) * matrix).sum(-1)
-
-    @classmethod
-    def CRB(cls, b, A, f, phi=0, nu=1):
-        return np.linalg.inv(cls.CFIM(b, A, f, phi, nu))
-
+        if np.array(f).ndim != 0:
+            return np.array([_cal(b, _f) for _f in f])
+        elif np.array(b).ndim != 0:
+            return np.array([_cal(_b, f) for _b in b])
+        else:
+            return _cal(b, f)
 
 
 class SPADE(_Share): # with PM-mode

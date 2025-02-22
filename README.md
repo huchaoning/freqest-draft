@@ -14,3 +14,11 @@ c.cropped_data # Cropped data
 c.estimates_b # Frequency estimates
 ```
 
+
+```mermaid
+graph LR
+A[原始数据] --一维裁切--> B[数据]
+B --Smith2010 的位置 MLE 估计子--> C[时域信号]
+C --Kay1993 的频率 MLE 估计子--> E[频率估计值]
+
+```

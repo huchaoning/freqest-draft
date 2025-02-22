@@ -95,8 +95,7 @@ def td_est(estimates_instance):
 def freq_est(estimates_instance):
     from .core import Estimates
     c: Estimates = estimates_instance
-
-    estimates_a, estimates_b, estimates_c = [], [], []
+    estimates = []
 
     for sample in c.time_domain:
         # Use FFT as pre-estimator, zero-padding to increase frequency resolution
@@ -113,17 +112,13 @@ def freq_est(estimates_instance):
 
         # Use MLE as frequency estimator. (Ref. [2])
         n = np.arange(N, dtype=np.float64)
-        def _I(f):
-            expr1 = np.sum(sample * np.cos(tau * f * n))
-            expr2 = np.sum(sample * np.sin(tau * f * n) * n)
+        def _J(f):
+            expr1 = np.sum(sample * np.sin(tau * f * n))
+            expr2 = np.sum(sample * np.cos(tau * f * n) * n)
 
-            expr3 = np.sum(sample * np.sin(tau * f * n))
-            expr4 = np.sum(sample * np.cos(tau * f * n) * n)
+            return -expr1, -tau*expr2
 
-            return - np.abs((sample * np.exp(-2j*pi * f * n)).sum())**2 / N, \
-                     tau / N * (expr1*expr2 - expr3*expr4)
-
-        result = minimize(_I, 
+        result = minimize(_J, 
                           pre_est,
                           bounds = [(0.05, 0.45)], 
                           tol = 1e-8, 
@@ -131,19 +126,11 @@ def freq_est(estimates_instance):
                           jac=True)
 
         if result.success:
-            f = result.x.item()
-            A = (2/N) * np.abs((sample * np.exp(-2j*pi * f * n)).sum())
-            phi = np.arctan(np.sum(sample * np.cos(tau * f * n) * n) / np.sum(sample * np.sin(tau * f * n) * n))
-
-            estimates_a.append(A)
-            estimates_b.append(f)
-            estimates_c.append(phi)
+            estimates.append(result.x.item())
         else:
             raise RuntimeError(f'not converged: {result.message}')
-
-    c.estimates_a = np.array(estimates_a)
-    c.estimates_b = np.array(estimates_b)
-    c.estimates_c = np.array(estimates_c)
+        
+        c.estimates = np.array(estimates)
 
     return c
 
