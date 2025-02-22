@@ -13,7 +13,7 @@ from src import *
 
 c = LoadEstimates('data/...') # Name a .npz file
 c.cropped_data # Cropped data
-c.estimates_b # Frequency estimates
+c.estimates # Frequency estimates
 ```
 
 
