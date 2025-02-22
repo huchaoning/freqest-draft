@@ -297,36 +297,10 @@ class DI(_Share):
 #####################
 #     Simulator     #
 #####################
-class PSF:
-    def __init__(self, sigma):
-        self.sigma = sigma
-
-    def abs_sq(self, x):
-        return np.abs(self.psf(x))**2
-
-    def pixelized(self, j_th, pixel_size=1):
-        from scipy.integrate import quad
-        return quad(self.abs_sq, pixel_size*j_th - pixel_size/2, pixel_size*j_th + pixel_size/2, limit=1000)[0]
-    
-    def prob_table(self, lower_limit: int, upper_limit: int, pixel_size=1):
-        return np.array([self.pixelized(j, pixel_size) for j in np.arange(lower_limit, upper_limit + 1, 1)])
-
-
-class SincPSF(PSF):
-    def psf(self, x):
-        return np.sinc(x / (self.sigma*np.pi)) / (self.sigma*np.pi)**0.5
-    
-
-class GausPSF(PSF):
-    def psf(self, x):
-        return np.exp(-(x**2) / (4*self.sigma**2)) / (2*np.pi*self.sigma**2)**0.25
-
-
 class Simulator:
     def __init__(self, 
                  metadata: MetaData, 
                  waveform: str = 'sign',
-                 psf: str = 'gaus',
                  sampling_rate = 20, 
                  repeat = 200,
                  sample_length = _Share.SAMPLE_LENGTH):
@@ -334,14 +308,12 @@ class Simulator:
         Parameters:
             metadata (MetaData): MetaData instance
             waveform (str): 'sign' or 'sin' 
-            psf (str): 'gaus' or 'sinc', affect to DI only
             sampling_rate (int): default is 20 Hz
             delay (float): default is 0
         '''
 
         self.meta = metadata
         self.waveform = waveform.lower()
-        self.psf = psf.lower()
         self.sampling_rate = sampling_rate
         self.repeat = repeat
         self.N = sample_length
@@ -398,15 +370,7 @@ class Simulator:
                 _sig = DI.SIGMA / qCMOS.PIXEL_SIZE
 
                 detectors = round((2*self.meta.amplitude + 8*DI.SIGMA) / qCMOS.PIXEL_SIZE)
-
-                if self.psf == 'gaus':
-                    # Use NumPy random number generator for better performence.
-                    outcomes = np.random.normal(detectors/2+_loc, _sig, photons)
-                elif self.psf == 'sinc':
-                    prob_table = SincPSF(_sig).prob_table(-detectors/2, detectors/2)
-                    outcomes = _loc + np.random.choice(len(prob_table), photons, p=prob_table/prob_table.sum())
-                else:
-                    raise ValueError("psf must be 'gaus' for 'sinc'")
+                outcomes = np.random.normal(detectors/2+_loc, _sig, photons)
 
                 return np.histogram(outcomes, bins=detectors, range=(0, detectors))[0]
 
