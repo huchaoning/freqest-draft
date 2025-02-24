@@ -34,7 +34,7 @@ graph TD
   C --> Ml
 
   Ml --> Td[Time Domain]
-  Td --> Mf(MLE of Frequency)
+  Td --> Mf(LSE of Frequency)
   Mf --> E[Estimates]
   
   E -->|Repeat| V[Variance of Estimates]
