@@ -1,6 +1,6 @@
 from math import pi, tau
 import numpy as np
-from scipy.optimize import minimize
+from scipy.optimize import minimize, curve_fit
 from scipy.special import erf
 
 __all__ = [
@@ -96,42 +96,29 @@ def freq_est(estimates_instance):
     from .core import Estimates
     c: Estimates = estimates_instance
     estimates = []
+    a = c.metadata.amplitude
 
     for sample in c.time_domain:
         # Use FFT as pre-estimator, zero-padding to increase frequency resolution
         # No padding to avoid interference when noisy
         N = len(sample)
-        n = N + 512 if c.metadata.pwm_duty == 0 else N
+        N_ = N + 32 if c.metadata.pwm_duty == 0 else N
 
-        fft = np.abs(np.fft.fft(sample, n=n))[:n // 2]
-        freq = np.fft.fftfreq(n, 1)[:n // 2]
+        fft = np.abs(np.fft.fft(sample, n=N_))[:N_ // 2]
+        freq = np.fft.fftfreq(N_, 1)[:N_ // 2]
 
         # Find the peak in the FFT
         peak_index = np.argmax(fft[1:]) + 1
         pre_est = freq[peak_index]
 
-        # Use MLE as frequency estimator. (Ref. [2])
-        n = np.arange(N, dtype=np.float64)
-        def _J(f):
-            expr1 = np.sum(sample * np.sin(tau * f * n))
-            expr2 = np.sum(sample * np.cos(tau * f * n) * n)
+        # Use LSE as frequency estimator. (Ref. [2])
+        s = lambda n, f: a * np.sin(tau * f * n)
+        s_jac = lambda n, f: a * tau * n * np.cos(tau * f * n)
+        popt, _ = curve_fit(s, xdata=np.arange(N), ydata=sample, p0=pre_est, maxfev=1000, jac=s_jac)
 
-            return -expr1, -tau*expr2
+        estimates.append(popt.item())
 
-        result = minimize(_J, 
-                          pre_est,
-                          bounds = [(0.05, 0.45)], 
-                          tol = 1e-8, 
-                          options = {'maxls': 100},
-                          jac=True)
-
-        if result.success:
-            estimates.append(result.x.item())
-        else:
-            raise RuntimeError(f'not converged: {result.message}')
-        
-        c.estimates = np.array(estimates)
-
+    c.estimates = np.array(estimates)
     return c
 
 
@@ -150,3 +137,5 @@ Ref. [2]:
  Fundamentals of Statistical Signal Processing, Volume I: Estimation Theory, 1993[M].
  Pearson.
 '''
+
+
