@@ -1,8 +1,6 @@
 __pycache__/
 .DS_Store
 raw/
-sim/
-plot_sim.ipynb
 
 data/
 
