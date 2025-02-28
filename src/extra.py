@@ -8,7 +8,10 @@ from dataclasses import dataclass
 from .core import Estimates
 
 
-def standardize(signal: np.ndarray):
+__all__ = ['ExEstimates']
+
+
+def _standardize(signal: np.ndarray):
     '''
     Standardizes the signal using the formula: `(signal - signal.mean()) / signal.mean()`.
 
@@ -57,7 +60,7 @@ class _ExEstimates(Estimates):
         extra_estimates_f, extra_estimates_phi = [], []
         for sample in self.time_domain:
             # Apply the window to the signal
-            windowed_sample = standardize(sample) * window
+            windowed_sample = _standardize(sample) * window
 
             # Zero-padding to increase frequency resolution
             if zero_padding is None:

@@ -308,6 +308,8 @@ class Simulator:
     def __init__(self, 
                  metadata: MetaData, 
                  waveform: str = 'sign',
+                 delay_params = (0, 0),
+
                  sampling_rate = _Share.SAMPLING_RATE, 
                  repeat = _Share.REPEAT,
                  sample_length = _Share.SAMPLE_LENGTH):
@@ -315,6 +317,8 @@ class Simulator:
         Parameters:
             metadata (MetaData): MetaData instance
             waveform (str): 'sign' or 'sin' 
+            delay_params (tuple, unit: s): Mean and standard deviation of a Gaussian random delay
+
             sampling_rate (int): default is 20 Hz
             repeat (int): default is 200
             sample_length (int): default is 50
@@ -322,6 +326,8 @@ class Simulator:
 
         self.meta = metadata
         self.waveform = waveform.lower()
+        self.delay_params = delay_params
+
         self.fs = sampling_rate
         self.repeat = repeat
         self.N = sample_length
@@ -335,23 +341,22 @@ class Simulator:
             _k = np.sign(np.sin(tau * fo * (t + delay)))
             if _k == 0:
                 _k = 1
-            return self.meta.amplitude * (_k)
-
+            return self.meta.amplitude * (_k - 1)
+        
         elif self.waveform == 'sin':
-            return self.meta.amplitude * (np.sin(tau * fo * (t + delay)))
+            return self.meta.amplitude * (np.sin(tau * fo * (t + delay)) - 1)
 
         else:
             raise ValueError("waveform must be 'sign' or 'sin'")
 
 
-    def gen(self, noise=0, delay=0, photons=None):
+    def gen(self, noise=0, photons=None):
         '''
         Generate simulated data using a statistical histogram method.
 
         Parameters:
-            photons (int): Number of photons to generate for each sample, default is 400 (DI) or 60 (SPADE).
-            noise (int): The lambda parameter of the poisson, default is 0.
-            sample_length (int): Length of the generated data, default is SAMPLE_LENGTH.
+            photons (int, unit: photons): Number of photons to generate for each sample, default is 400 (DI) or 60 (SPADE).
+            noise (float, unit: photons): The lambda parameter of the poisson, default is 0.
 
         Returns:
             np.ndarray: Simulated data array.
@@ -362,7 +367,7 @@ class Simulator:
             _sig = SPADE.SIGMA
             p1 = lambda s: (s-2*_sig)**2*np.exp(-s**2/(4*_sig**2))/(8*_sig**2)
             p2 = lambda s: (s+2*_sig)**2*np.exp(-s**2/(4*_sig**2))/(8*_sig**2)
-            def _gen_one(n):
+            def _gen_one(n, delay):
                 return np.histogram(np.random.uniform(0, 1, photons), 
                                     [0, 
                                      p1(self._loc(n, delay)), 
@@ -371,16 +376,18 @@ class Simulator:
         elif self.meta.measurement.lower() == 'di':
             _sig = DI.SIGMA / qCMOS.PIXEL_SIZE
             detectors = round((2*self.meta.amplitude + 8*DI.SIGMA) / qCMOS.PIXEL_SIZE)
-            def _gen_one(n):
+            def _gen_one(n, delay):
                 # Convert length units to camera pixel size to match experimental data.
-                loc = self._loc(n, delay) / qCMOS.PIXEL_SIZE
+                loc = (self._loc(n, delay) + self.meta.amplitude) / qCMOS.PIXEL_SIZE
                 outcomes = np.random.normal(detectors/2+loc, _sig, photons)
                 return np.histogram(outcomes, bins=detectors, range=(0, detectors))[0]
 
         data = []
         for _ in range(self.repeat):
+            # 
+            delay = np.random.normal(*self.delay_params)
             for n in range(self.N):
-                data.append(_gen_one(n))
+                data.append(_gen_one(n, delay))
         data = np.array(data).astype(float).reshape(self.repeat, self.N, -1)
 
         if noise == 0:

@@ -5,7 +5,7 @@ from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 from matplotlib.ticker import AutoMinorLocator, ScalarFormatter
 
 from matplotlib_inline import backend_inline
-backend_inline.set_matplotlib_formats('svg')
+backend_inline.set_matplotlib_formats('retina')
 del backend_inline
 
 from matplotlib.font_manager import fontManager
@@ -16,8 +16,15 @@ plt.rcdefaults()
 plt.rcParams['font.family'] = 'Latin Modern Roman'
 plt.rcParams['mathtext.fontset'] = 'cm'
 plt.rcParams['font.size'] = 7
+plt.rcParams['lines.linewidth'] = 1
+plt.rcParams['lines.markersize'] = 3
+plt.rcParams['lines.markeredgecolor'] = 'none'
 plt.rcParams['savefig.bbox'] = 'tight'
-
+plt.rcParams['figure.figsize'] = (8.5 / 2.54, 0.618 * 8.5 / 2.54)
+plt.rcParams['figure.dpi'] = 192
+plt.rcParams['axes.prop_cycle'] = plt.matplotlib.rcsetup.cycler(
+    'color', ['tab:purple', 'tab:green', 'tab:blue', 'tab:brown', 'tab:pink', 'tab:gray', 'tab:olive', 'tab:cyan']
+)
 
 from math import tau, pi
 import numpy as np
