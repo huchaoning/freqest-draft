@@ -1,122 +1,191 @@
-from math import tau
+from math import pi, tau
 import numpy as np
 from scipy.optimize import curve_fit, minimize, brute
 from scipy.special import erf
 from scipy.stats import norm
 
+from dataclasses import dataclass
+from .core import Estimates
 
-__all__ = ['extra_estimator']
+
+def standardize(signal: np.ndarray):
+    '''
+    Standardizes the signal using the formula: `(signal - signal.mean()) / signal.mean()`.
+
+    Parameters:
+        signal (np.ndarray): The input signal to be standardized.
+
+    Returns:
+        np.ndarray: The standardized signal with a mean of 0 and unit variance.
+    '''
+    return (signal - signal.mean()) / signal.mean()
 
 
-def freq_estimator(estimates_instance, 
-                   method='lse', 
-                   
-                   zero_padding=0, 
-                   window_type='none'):
+
+@dataclass
+class _ExEstimates(Estimates):
+    extra_estimates_a: np.ndarray = None
+    extra_estimates_f: np.ndarray = None
+    extra_estimates_phi: np.ndarray = None
+
     
-
-    from .core import Estimates
-    c: Estimates = estimates_instance
-
+    def __repr__(self):
+        return super().__repr__()
 
 
-    def _waveform(n, f):
-        return np.sin(tau * f * n)
-    
-    def _grad_waveform(n, f):
-        return tau * n * np.cos(tau * f * n)
-    
-    def _residual(f):
-        n = np.arange(len(sample), dtype=np.float64)
-        return np.sum((sample - _waveform(n, f)) ** 2)
-
-    l = len(sample)
+    def __post_init__(self):
+        if not isinstance(self.time_domain, np.ndarray):
+            self.time_domain = self.td_est().time_domain
 
 
-    # Use FFT as pre-estimator, if method is fft, retrun FFT estimates.
-    # Apply windowing function
-    window_type = window_type.lower()
-    if window_type == 'hanning':
-        window = np.hanning(l)
-    elif window_type == 'hamming':
-        window = np.hamming(l) 
-    elif window_type == 'blackman':
-        window = np.blackman(l)
-    elif window_type == 'none':
-        window = 1
-    else:
-        raise ValueError("window type must be one of 'hanning', 'hamming', or 'blackman'.")
-
-    # Apply the window to the signal
-    windowed_sample = _standardize(sample, True) * window
-
-    # Zero-padding to increase frequency resolution
-    n = l + zero_padding
-    fft = np.abs(np.fft.fft(windowed_sample, n=n))[:n // 2]
-    freq = np.fft.fftfreq(n, 1)[:n // 2]
-
-    # Find the peak in the FFT
-    peak_index = np.argmax(fft[1:]) + 1
-    pre_freq_est = freq[peak_index]
 
 
-    if method.lower() == 'fft':
-        return pre_freq_est
-    
+    def fft(self, zero_padding=None, window_type=None):
+        N = self.time_domain.shape[-1]
+        # Apply windowing function
+        if window_type is None:
+            window = 1
+        elif window_type.lower() == 'hanning':
+            window = np.hanning(N)
+        elif window_type.lower() == 'hamming':
+            window = np.hamming(N) 
+        elif window_type.lower() == 'blackman':
+            window = np.blackman(N)
+        else:
+            raise ValueError("window type must be one of 'hanning', 'hamming', or 'blackman'.")
 
-    if method.lower() == 'brute':
-        # Brute-force search for the initial frequency
-        search_range = (0.05, 0.45)
-        grid_points = 256
+        extra_estimates_f, extra_estimates_phi = [], []
+        for sample in self.time_domain:
+            # Apply the window to the signal
+            windowed_sample = standardize(sample) * window
 
-        search_grid = (slice(search_range[0], search_range[1], (search_range[1] - search_range[0]) / grid_points),)
-        brute_freq = brute(_residual, ranges=search_grid, finish=None)
-        return brute_freq
+            # Zero-padding to increase frequency resolution
+            if zero_padding is None:
+                N_ = N + 32 if self.metadata.pwm_duty == 0 else N
+            else:
+                N_ = N + zero_padding
+
+            fft_result = np.fft.fft(windowed_sample, n=N_)
+            fft_magnitude = np.abs(fft_result)[:N_ // 2]
+
+            freq = np.fft.fftfreq(N_, 1)[:N_ // 2]
+            phase = np.angle(fft_result)[:N_ // 2]
+
+            # Find the peak in the FFT
+            peak_index = np.argmax(fft_magnitude[1:]) + 1
+
+            extra_estimates_f.append(freq[peak_index])
+            extra_estimates_phi.append(phase[peak_index])
+
+        self.extra_estimates_f = np.array(extra_estimates_f)
+        self.extra_estimates_phi = np.array(extra_estimates_phi)
+        return self
 
 
-    elif method.lower() == 'lse':
+
+
+    def lse(self):
         # Use LSE as frequency estimator. 
         # Note that this LSE is an non-linear LSE.
-        n = np.arange(len(sample), dtype=np.float64)
-        popt, _= curve_fit(_waveform, xdata=n, ydata=sample, p0=pre_freq_est, maxfev=1000, jac=_grad_waveform)
-        return popt.item()
-    
-    elif method.lower() == 'mle':
-        # Use MLE as frequency estimator. (Kay1993)
-        N = len(sample)
+        N = self.time_domain.shape[-1]
         n = np.arange(N, dtype=np.float64)
-        # _I = lambda f: - np.abs((sample * np.exp(-2j*np.pi*f*n)).sum())**2 / N
-        def _I(f):
-            exr1 = np.sum(sample * np.cos(2*np.pi * f * n))
-            exr2 = np.sum(sample * np.sin(2*np.pi * f * n) * n)
 
-            exr3 = np.sum(sample * np.sin(2*np.pi * f * n))
-            exr4 = np.sum(sample * np.cos(2*np.pi * f * n) * n)
+        def _s(n, *params):
+            f, phi = params
+            return (4/pi) * self.metadata.amplitude * np.sin(tau * f * n + phi)
 
-            return - np.abs((sample * np.exp(-2j*np.pi*f*n)).sum())**2 / N, \
-                    2*np.pi/N * (exr1*exr2 - exr3*exr4)
+        def _sjac(n, *params):
+            f, phi = params
+            jac = np.zeros((len(n), 2))
+            A = (4/pi) * self.metadata.amplitude
+            jac[:, 0] = A * tau * n * np.cos(tau * f * n + phi)
+            jac[:, 1] = A * np.cos(tau * f * n + phi)
+            return jac
+        
+        # Use FFT as pre-estimator
+        extra_estimates_f, extra_estimates_phi = [], []
+        pre_freq_est = self.fft().extra_estimates_f
 
-        result = minimize(_I, 
-                          pre_freq_est,
-                          bounds = [(0.05, 0.45)], 
-                          tol = 1e-8, 
-                          options = {'maxls': 100},
-                          jac=True)
+        for i, sample in enumerate(self.time_domain):
+            popt, _= curve_fit(_s, xdata=n, ydata=sample, p0=[pre_freq_est[i], 0], maxfev=1000, jac=_sjac)
+            extra_estimates_f.append(popt[0])
+            extra_estimates_phi.append(popt[1])
 
-        if result.success:
-            return result.x.item()
-        else:
-            raise RuntimeError(f'not converged: {result.message}')
-
-    else:
-        raise ValueError('method must be lse or fft')
+        self.extra_estimates_f = np.array(extra_estimates_f)
+        self.extra_estimates_phi = np.array(extra_estimates_phi)
+        return self
 
 
 
-# The camera pixels are used as the length unit, so the pixel size is 1.
-def _standardize(time_domain: np.ndarray, standardize: bool):
-    if standardize:
-        std = time_domain.std()
-        mean = time_domain.mean()
-        time_domain = (time_domain - mean) / std
-    return time_domain
+
+    def mle(self):
+        # Use MLE as frequency estimator. (Kay1993)
+        N = self.time_domain.shape[-1]
+        n = np.arange(N, dtype=np.float64)
+
+        def I(sample):
+            def wrapper(f):
+                exr1 = np.sum(sample * np.cos(2*np.pi * f * n))
+                exr2 = np.sum(sample * np.sin(2*np.pi * f * n) * n)
+
+                exr3 = np.sum(sample * np.sin(2*np.pi * f * n))
+                exr4 = np.sum(sample * np.cos(2*np.pi * f * n) * n)
+
+                return - np.abs((sample * np.exp(-2j*np.pi*f*n)).sum())**2 / N, \
+                        2*np.pi/N * (exr1*exr2 - exr3*exr4)
+            return wrapper
+
+        # Use FFT as pre-estimator
+        extra_estimates_a, extra_estimates_f, extra_estimates_phi = [], [], []
+        pre_freq_est = self.fft().extra_estimates_f
+        for i, sample in enumerate(self.time_domain):
+            result = minimize(I(sample), 
+                              pre_freq_est[i],
+                              bounds = [(0.05, 0.45)], 
+                              tol = 1e-8, 
+                              options = {'maxls': 100},
+                              jac=True)
+
+            if result.success:
+                hat_f = result.x.item()
+                hat_A = (2/N) * np.abs((sample * np.exp(-2j*pi * hat_f * n)).sum())
+                hat_phi = np.arctan(np.sum(sample * np.cos(tau * hat_f * n) * n) / np.sum(sample * np.sin(tau * hat_f * n) * n))
+
+                extra_estimates_a.append(hat_A)
+                extra_estimates_f.append(hat_f)
+                extra_estimates_phi.append(hat_phi)
+
+            else:
+                raise RuntimeError(f'not converged: {result.message}')
+
+        self.extra_estimates_a = np.array(extra_estimates_a)
+        self.extra_estimates_f = np.array(extra_estimates_f)
+        self.extra_estimates_phi = np.array(extra_estimates_phi)
+        return self
+
+
+
+
+
+def ExEstimates(estimates_instance):
+    '''
+    Returns an instance of the extended class `_ExEstimates`, which expands the `Estimates` class for multi-parameter estimation.
+
+    Parameters:
+        estimates_instance (Estimates): An instance of the `Estimates` class.
+
+    Returns:
+        _ExEstimates: An extended instance of `Estimates` with additional estimation methods and fields.
+
+    This extended class introduces three additional fields: `extra_estimates_a`, `extra_estimates_f`, and `extra_estimates_phi`, 
+    all of which are optional.
+
+    The methods `fft`, `mle`, and `lse` store their estimated values in these fields.
+    
+    Where `mle` follows the method from Kay1993 and jointly estimates amplitude with some approximations.
+
+    This class is mainly used for frequency estimation from time-domain signals. If the time-domain signal is not available, 
+    it will be automatically computed.
+    '''
+
+    return _ExEstimates(**estimates_instance.__dict__)

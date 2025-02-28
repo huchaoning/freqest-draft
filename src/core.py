@@ -134,9 +134,14 @@ class Estimates(_Repr):
     time_domain: np.ndarray = None
     estimates: np.ndarray = None
 
+    def td_est(self):
+        return td_est(self)
+
+    def freq_est(self):
+        return freq_est(self)
+
     def est(self):
         return freq_est(td_est(self))
-
 
     def savez(self, dirname):
         dirname = os.path.expanduser(dirname)
@@ -218,6 +223,8 @@ def NewEstimates(raw_path: str, metadata: MetaData, photons = None) -> Estimates
 class _Share:
     SIGMA = 103 #um
     SAMPLE_LENGTH = 50
+    SAMPLING_RATE = 20
+    REPEAT = 200
 
     @classmethod
     def CFI(cls, b, A, f, nu=1):
@@ -301,29 +308,28 @@ class Simulator:
     def __init__(self, 
                  metadata: MetaData, 
                  waveform: str = 'sign',
-                 sampling_rate = 20, 
-                 repeat = 200,
+                 sampling_rate = _Share.SAMPLING_RATE, 
+                 repeat = _Share.REPEAT,
                  sample_length = _Share.SAMPLE_LENGTH):
         ''' 
         Parameters:
             metadata (MetaData): MetaData instance
             waveform (str): 'sign' or 'sin' 
             sampling_rate (int): default is 20 Hz
-            delay (float): default is 0
+            repeat (int): default is 200
+            sample_length (int): default is 50
         '''
 
         self.meta = metadata
         self.waveform = waveform.lower()
-        self.sampling_rate = sampling_rate
+        self.fs = sampling_rate
         self.repeat = repeat
         self.N = sample_length
 
-        self.meta.pwm_duty = 'SIM'
 
     def _loc(self, n, delay):
-        fs = self.sampling_rate
-        t = n / fs
-        fo = fs * self.meta.ground_truth
+        t = n / self.fs
+        fo = self.fs * self.meta.ground_truth
 
         if self.waveform == 'sign':
             _k = np.sign(np.sin(tau * fo * (t + delay)))
@@ -376,6 +382,11 @@ class Simulator:
             for n in range(self.N):
                 data.append(_gen_one(n))
         data = np.array(data).astype(float).reshape(self.repeat, self.N, -1)
+
+        if noise == 0:
+            self.meta.pwm_duty = 0
+        else:
+            self.meta.pwm_duty = 'NOISY'
 
         return Estimates(self.meta, 
                          np.round((data + np.random.poisson(noise, size=data.shape)) / qCMOS.CONVERSION_FACTOR + qCMOS.OFFSET),
