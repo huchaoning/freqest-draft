@@ -13,7 +13,7 @@ __all__ = ['ExEstimates']
 
 def _standardize(signal: np.ndarray):
     '''
-    Standardizes the signal using the formula: `(signal - signal.mean()) / signal.mean()`.
+    Standardizes the signal using the formula: `(signal - signal.mean()) / signal.std()`.
 
     Parameters:
         signal (np.ndarray): The input signal to be standardized.
@@ -21,7 +21,7 @@ def _standardize(signal: np.ndarray):
     Returns:
         np.ndarray: The standardized signal with a mean of 0 and unit variance.
     '''
-    return (signal - signal.mean()) / signal.mean()
+    return (signal - signal.mean()) / signal.std()
 
 
 
