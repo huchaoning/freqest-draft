@@ -4,7 +4,6 @@ from scipy.optimize import curve_fit, minimize, brute
 from scipy.special import erf
 from scipy.stats import norm
 
-from dataclasses import dataclass
 from .core import Estimates
 
 
@@ -25,21 +24,37 @@ def _standardize(signal: np.ndarray):
 
 
 
-@dataclass
-class _ExEstimates(Estimates):
-    extra_estimates_a: np.ndarray = None
-    extra_estimates_f: np.ndarray = None
-    extra_estimates_phi: np.ndarray = None
+class ExEstimates(Estimates):
+    def __init__(self, estimates_instance: Estimates):
+        '''
+        Initializes an instance of `ExEstimates`, extending the `Estimates` class for multi-parameter estimation.
+
+        Parameters:
+            estimates_instance (Estimates): `Estimates` instance
+
+        This extended class introduces three additional fields: `extra_estimates_a`, `extra_estimates_f`, and `extra_estimates_phi`, 
+        all of which are optional.
+
+        Three methods, `fft`, `mle`, and `lse`, are provided in `ExEstimates`.
+        
+        Where `mle` follows the method from Kay1993 and jointly estimates amplitude with some approximations.
+
+        This class is mainly used for frequency estimation from time-domain signals. If the time-domain signal is not available, 
+        it will be automatically computed by using `Estimates.td_est()` method.
+        '''
+
+        super().__init__(**estimates_instance.__dict__)
+
+        self.extra_estimates_a: np.ndarray = None
+        self.extra_estimates_f: np.ndarray = None
+        self.extra_estimates_phi: np.ndarray = None
+
+        if not isinstance(self.time_domain, np.ndarray):
+            self.time_domain = self.td_est().time_domain
 
     
     def __repr__(self):
         return super().__repr__()
-
-
-    def __post_init__(self):
-        if not isinstance(self.time_domain, np.ndarray):
-            self.time_domain = self.td_est().time_domain
-
 
 
 
@@ -167,28 +182,23 @@ class _ExEstimates(Estimates):
         return self
 
 
+# class MultiParams:
+#     N = _Share.SAMPLE_LENGTH
+#     sigma = _Share.SIGMA
 
+#     @classmethod
+#     def ApproxCFIM(cls, A):
+#         n = np.arange(cls.N)
+#         mat_1 = [[cls.N, 0, 0],
+#                  [0, np.sum(n**2), np.sum(n)],
+#                  [0, np.sum(n), cls.N]]
+        
+#         mat_2 = [[0.5, 0, 0],
+#                  [0, 2*A**2*pi**2, pi*A**2],
+#                  [0, pi*A**2, A**2*0.5]]
 
+#         return (1/cls.sigma**2) * np.array(mat_1) * np.array(mat_2)
 
-def ExEstimates(estimates_instance):
-    '''
-    Returns an instance of the extended class `_ExEstimates`, which expands the `Estimates` class for multi-parameter estimation.
-
-    Parameters:
-        estimates_instance (Estimates): An instance of the `Estimates` class.
-
-    Returns:
-        _ExEstimates: An extended instance of `Estimates` with additional estimation methods and fields.
-
-    This extended class introduces three additional fields: `extra_estimates_a`, `extra_estimates_f`, and `extra_estimates_phi`, 
-    all of which are optional.
-
-    The methods `fft`, `mle`, and `lse` store their estimated values in these fields.
-    
-    Where `mle` follows the method from Kay1993 and jointly estimates amplitude with some approximations.
-
-    This class is mainly used for frequency estimation from time-domain signals. If the time-domain signal is not available, 
-    it will be automatically computed.
-    '''
-
-    return _ExEstimates(**estimates_instance.__dict__)
+#     @classmethod
+#     def ApproxCRB(cls, A):
+#         return np.linalg.inv(cls.ApproxCFIM(A))[1, 1]
