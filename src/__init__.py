@@ -15,7 +15,7 @@ del fontManager
 plt.rcdefaults()
 plt.rcParams['font.family'] = 'Latin Modern Roman'
 plt.rcParams['mathtext.fontset'] = 'cm'
-plt.rcParams['font.size'] = 7
+plt.rcParams['font.size'] = 8
 plt.rcParams['lines.linewidth'] = 1
 plt.rcParams['lines.markersize'] = 3
 plt.rcParams['lines.markeredgecolor'] = 'none'
