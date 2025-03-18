@@ -11,6 +11,8 @@ import paramiko
 from .api import *
 
 __all__ =[
+    '__version__'
+
     'Dcamapi',
     'Dcam',
     'ALP4',
@@ -20,6 +22,8 @@ __all__ =[
 
     'RaspiLED'
 ]
+
+__version__ = 0.1
 
 
 class EasyDcam(Dcam):
