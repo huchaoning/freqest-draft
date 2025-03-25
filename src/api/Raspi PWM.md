@@ -4,7 +4,7 @@
 >
 > *Source: [Raspberry Pi 5 - All channels on pwm0](https://gist.github.com/Gadgetoid/b92ad3db06ff8c264eef2abf0e09d569)*
 >
-> *Forked @ 2025.3.25*
+> *Forked @ 2025.3.25 and modified by Chao-Ning Hu*
 
 Since PWM is a little fraught with gotchas, this is mostly a message to future me-
 
@@ -70,7 +70,7 @@ Then use this janky script to stick some safety rails on poking PWM:
 
 ```bash
 #!/bin/bash
-NODE=/sys/class/pwm/pwmchip1
+NODE=/sys/class/pwm/pwmchip2  # by cnhu
 CHANNEL="$1"
 PERIOD="$2"
 DUTY_CYCLE="$3"
@@ -93,7 +93,7 @@ if [ -d "$NODE/device/consumer:platform:cooling_fan/" ]; then
 fi
 
 if [ ! -d "$NODE/pwm$CHANNEL" ]; then
-	echo "0" | sudo tee -a "$NODE/export"
+	echo $CHANNEL | sudo tee -a "$NODE/export"  # by cnhu
 fi
 
 echo "0" | sudo tee -a "$NODE/pwm$CHANNEL/enable" > /dev/null
