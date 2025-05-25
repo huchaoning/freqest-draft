@@ -267,10 +267,10 @@ class HG_SPADE(SPADE):
     @classmethod
     def gamma(cls, s, b, nu=1, smoothing=1e-10, maxq=100):
         from scipy.special import factorial
-        s = np.atleast_1d(s)
+        s = np.clip(np.atleast_1d(s), smoothing, np.inf) # smoothing
         b = np.clip(np.atleast_1d(b), smoothing, np.inf) # smoothing
-        eta = np.clip(s**2 / (4 * cls.SIGMA**2), 0, np.inf) # smoothing
-
+        eta = s**2 / (4 * cls.SIGMA**2)
+        
         # if b == 0: # HG-SPADE is vulnerable to noise; even b = 1e-10 can degrade its performance.
         #     gamma_k = lambda k: np.exp(-eta) * eta**(k-1) * (k-eta)**2 / (cls.SIGMA**2 * factorial(k))
         #     return np.array([gamma_k(k) for k in np.arange(maxq+1)]).sum(0)

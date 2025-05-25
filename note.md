@@ -20,6 +20,33 @@ $$
 = \frac{e^{-\lambda}}{q!} \lambda^{q-1} (q - \lambda) \frac{s}{2\sigma^2}
 $$
 
+$\gamma$:
+$$
+\gamma = \sum_q \gamma_q
+$$
+所以:
+$$
+\ln(\gamma_q) = 2\ln(\frac{e^{-\lambda}}{q!} \lambda^{q-1} (q - \lambda) \frac{\sqrt{\lambda}}{\sigma}) - \ln(\frac{e^{-\lambda}\lambda^q}{q!}+b)
+$$
+
+$$
+\text{Term1}=2\qty[\ln(e^{-\lambda})+\ln(\lambda^{q-\frac12})+\ln(q-\lambda)-\ln(q!)-\ln(\sigma)]\\
+=-2\lambda+\qty(2q-1)\ln(\lambda) + 2\ln(q-\lambda)-2\ln(q!)-\ln(\sigma^2)
+$$
+
+$$
+\text{Term2} = \ln(e^{-\lambda}\lambda^q +b) - \ln(q!)
+$$
+
+$$
+\ln(\sigma^2\gamma_q) =-2\lambda+\qty(2q-1)\ln(\lambda) + 2\ln(q-\lambda)-3\ln(q!)+\ln(e^{-\lambda}\lambda^q +b)
+$$
+
+
+
+
+
+
 $$
 q=0
 $$
@@ -35,6 +62,9 @@ $$
 $$
 \sigma^2\eval{\gamma^\text{(HG)}}_{q=0} =\frac{1}{e^{-\lambda}+b} \lambda e^{-2\lambda}
 $$
+
+
+
 
 
 $$
@@ -89,4 +119,3 @@ $$
 
 问题在于, 如果不采用 smoothing 数值会出现错误. 但如果采用, 则数值结果会和理论值相差较大.
 
-可能取对数能解决数值问题.
