@@ -12,6 +12,8 @@ __all__ = [
     'SLM',
 
     'SPADE',
+    'PM_SPADE',
+    'HG_SPADE',
     'DI',
 
     'MetaData',
@@ -22,8 +24,13 @@ __all__ = [
     'Simulator'
 ]
 
-
-
+#################
+#    Aliases    #
+#################
+PM_SPADE_ALIAS = ('spade', 'pm_spade')
+HG_SPADE_ALIAS = ('hg_spade',)
+DI_ALIAS = ('di',)
+ALL_ALIAS = PM_SPADE_ALIAS + HG_SPADE_ALIAS + DI_ALIAS
 
 
 #################### 
@@ -84,7 +91,7 @@ class MetaData(_Repr):
     Data class to store metadata for measurements.
 
     Parameters:
-        measurement (str): The type of measurement, 'SPADE' or 'DI'.
+        measurement (str): The type of measurement, '(PM/HG)_SPADE' or 'DI'.
         ground_truth (float): The ground truth value of frequency.
 
         amplitude (float, unit: um): The amplitude value ().
@@ -97,8 +104,8 @@ class MetaData(_Repr):
     pwm_duty: int = 0
 
     def __post_init__(self):
-        if self.measurement.lower() not in ('spade', 'di'):
-            raise ValueError("measurement must be 'SPADE' or 'DI'")
+        if self.measurement.lower() not in ALL_ALIAS:
+            raise ValueError("measurement must be '(PM/HG)_SPADE' or 'DI'")
         else:
             self.measurement = self.measurement.upper()
 
@@ -180,36 +187,22 @@ def NewEstimates(raw_path: str, metadata: MetaData, photons = None) -> Estimates
         raise FileNotFoundError(f".npy file '{raw_path}' not found")
 
     raw = raw.astype(float)
-
-    # Method 1
     temp = raw[..., :-4, :]
     background = (temp[..., :5,   :5].mean((-1, -2)) + temp[..., -5:,   :5].mean((-1, -2))  +
                   temp[..., :5, -5: ].mean((-1, -2)) + temp[..., -5:, -5: ].mean((-1, -2))) / 4
     background = qCMOS.convert2photons(background).mean()
 
 
-    if metadata.measurement.lower() == 'di':
+    if metadata.measurement.lower() in DI_ALIAS:
         lower_bound = int(np.ceil(DI.CENTER + 4*DI.SIGMA / qCMOS.PIXEL_SIZE))
         upper_bound = int(np.ceil(DI.CENTER - (2*metadata.amplitude + 4*DI.SIGMA) / qCMOS.PIXEL_SIZE))  
         cropped = raw[..., upper_bound:lower_bound, DI.X_AXIS]
 
-    elif metadata.measurement.lower() == 'spade':
+    elif metadata.measurement.lower() in PM_SPADE_ALIAS:
         cropped = raw[..., (SPADE.POINT_1, SPADE.POINT_2), SPADE.X_AXIS]
 
     photons = (qCMOS.convert2photons(cropped).mean() - background) * cropped.shape[-1]
 
-    # if metadata.pwm_duty == 0:
-    #     photons_ = qCMOS.convert2photons(cropped).sum(-1).mean()
-
-    # elif photons is not None:
-    #     photons_ = photons
-
-    # else:
-    #     raise ValueError('PWM duty is not 0, photons is needed.')
-
-    # Method 2
-    # ERROR
-    # background = (qCMOS.convert2photons(cropped).sum(-1).mean() - photons_) / cropped.shape[-1]
 
     return Estimates(metadata, cropped, background, photons)
 
@@ -228,7 +221,6 @@ class _Share:
 
     @classmethod
     def CFI(cls, b, A, f, nu=1):
-        b = np.clip(b, 1e-10, np.inf) # smoothing
         n = np.arange(cls.SAMPLE_LENGTH)
 
         def _cal(b, f):
@@ -250,8 +242,7 @@ class _Share:
         return 2*(A*pi/cls.SIGMA)**2 * sum_n
 
 
-
-class SPADE(_Share): # with PM-mode
+class SPADE(_Share): # with PM-modes (by default)
     X_AXIS = 89
     POINT_1 = 406
     POINT_2 = 116
@@ -259,12 +250,37 @@ class SPADE(_Share): # with PM-mode
     ROI = {'X0': 2128, 'Y0': 720, 'W': 180, 'H': 500}
 
     @classmethod
-    def gamma(cls, s, b):
-        xi = s / (2 * cls.SIGMA)
-        uk = lambda k: 1 / 2 * (xi + k)**2 * np.exp(-xi**2) + b
+    def gamma(cls, s, b, nu=1, smoothing=1e-10):
+        b = np.clip(np.atleast_1d(b), smoothing, np.inf) # smoothing
+        xi = np.atleast_1d(s) / (2 * cls.SIGMA)
+        uk = lambda k: 1 / 2 * (xi + k)**2 * np.exp(-xi**2) + (b / nu)
         duk = lambda k: - 1 / (2 * cls.SIGMA) * (xi + k) * (xi**2 + k * xi - 1) * np.exp(-xi**2)
 
         return np.array([1 / uk(k) * duk(k)**2 for k in (-1, 1)]).sum(0)
+    
+
+class PM_SPADE(SPADE): # alias
+    pass
+
+
+class HG_SPADE(SPADE):
+    @classmethod
+    def gamma(cls, s, b, nu=1, smoothing=1e-10, maxq=100):
+        from scipy.special import factorial
+        s = np.atleast_1d(s)
+        b = np.clip(np.atleast_1d(b), smoothing, np.inf) # smoothing
+        eta = np.clip(s**2 / (4 * cls.SIGMA**2), 0, np.inf) # smoothing
+
+        # if b == 0: # HG-SPADE is vulnerable to noise; even b = 1e-10 can degrade its performance.
+        #     gamma_k = lambda k: np.exp(-eta) * eta**(k-1) * (k-eta)**2 / (cls.SIGMA**2 * factorial(k))
+        #     return np.array([gamma_k(k) for k in np.arange(maxq+1)]).sum(0)
+
+        uk = lambda k: np.exp(-eta) * eta**k / factorial(k) + (b / nu)
+        duk = lambda k: eta**(k - 1) * (k - eta) * (s / (2 * cls.SIGMA**2)) * np.exp(-eta) / factorial(k)
+
+        return np.array([1 / uk(k) * duk(k)**2 for k in np.arange(maxq+1)]).sum(0)
+        
+
 
 
 class DI(_Share):
@@ -274,11 +290,9 @@ class DI(_Share):
     ROI = {'X0': 1440, 'Y0': 876, 'W': 160, 'H': 228}
 
     @classmethod
-    def gamma(cls, s, b, a=qCMOS.PIXEL_SIZE, regin=np.inf):
-        s = np.array(s)
-        ndim = s.ndim
-
-        s = np.array([s]) if ndim == 0 else s
+    def gamma(cls, s, b, a=qCMOS.PIXEL_SIZE, regin=np.inf, nu=1, smoothing=1e-10):
+        b = np.clip(np.atleast_1d(b), smoothing, np.inf) # smoothing
+        s = np.atleast_1d(s)
 
         from scipy.special import erf
         if regin == np.inf:
@@ -289,13 +303,10 @@ class DI(_Share):
         zp = np.array([(k - _s + 0.5*a) / (cls.SIGMA * (2**0.5)) for _s in np.asarray(s)])
         zn = np.array([(k - _s - 0.5*a) / (cls.SIGMA * (2**0.5)) for _s in np.asarray(s)])
         
-        uk = erf(zp)/2 - erf(zn)/2 + b
+        uk = erf(zp)/2 - erf(zn)/2 + (b / nu)
         duk = 1/(cls.SIGMA*(tau**0.5)) * (-np.exp(-zp**2) + np.exp(-zn**2))
 
-        if ndim == 0:
-            return (1 / uk * duk**2).sum()
-        else:
-            return (1 / uk * duk**2).sum(-1)
+        return (1 / uk * duk**2).sum(-1)
 
 
 
@@ -361,9 +372,9 @@ class Simulator:
         Returns:
             np.ndarray: Simulated data array.
         '''
-        photons = photons or (400 if self.meta.measurement.lower() == 'di' else 60)
+        photons = photons or (400 if self.meta.measurement.lower() in DI_ALIAS else 60)
 
-        if self.meta.measurement.lower() == 'spade':
+        if self.meta.measurement.lower() in PM_SPADE_ALIAS:
             _sig = SPADE.SIGMA
             p1 = lambda s: (s-2*_sig)**2*np.exp(-s**2/(4*_sig**2))/(8*_sig**2)
             p2 = lambda s: (s+2*_sig)**2*np.exp(-s**2/(4*_sig**2))/(8*_sig**2)
@@ -373,7 +384,7 @@ class Simulator:
                                      p1(self._loc(n, delay)), 
                                      p1(self._loc(n, delay)) + p2(self._loc(n, delay))])[0]
 
-        elif self.meta.measurement.lower() == 'di':
+        elif self.meta.measurement.lower() in DI_ALIAS:
             _sig = DI.SIGMA / qCMOS.PIXEL_SIZE
             detectors = round((2*self.meta.amplitude + 8*DI.SIGMA) / qCMOS.PIXEL_SIZE)
             def _gen_one(n, delay):
@@ -384,7 +395,6 @@ class Simulator:
 
         data = []
         for _ in range(self.repeat):
-            # 
             delay = np.random.normal(*self.delay_params)
             for n in range(self.N):
                 data.append(_gen_one(n, delay))

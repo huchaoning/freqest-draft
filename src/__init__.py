@@ -47,4 +47,3 @@ import platform
 if platform.system() == 'Windows':
     from .controller import *
 
-

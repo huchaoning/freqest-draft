@@ -9,7 +9,9 @@ __all__ = [
 ]
 
 
+
 def td_est(estimates_instance):
+    from .core import PM_SPADE_ALIAS, HG_SPADE_ALIAS, DI_ALIAS
     from .core import Estimates, qCMOS, SPADE, DI
     c: Estimates = estimates_instance
 
@@ -22,7 +24,7 @@ def td_est(estimates_instance):
     I0, b = c.photons, c.background
 
     # SPADE measurement
-    if c.metadata.measurement.lower() == 'spade':
+    if c.metadata.measurement.lower() in PM_SPADE_ALIAS:
         _sig = SPADE.SIGMA
         k = qCMOS.convert2photons(c.cropped_data)[..., 0] / qCMOS.convert2photons(c.cropped_data)[..., 1]
         pre_est = 2 * _sig * (1 - np.sqrt(k)) / (1 + np.sqrt(k))
@@ -40,15 +42,9 @@ def td_est(estimates_instance):
             return wrapper
 
     # DI (Ref. [1])
-    elif c.metadata.measurement.lower() == 'di':
+    elif c.metadata.measurement.lower() in DI_ALIAS:
         _sig = DI.SIGMA  / qCMOS.PIXEL_SIZE
         pre_est = samples @ np.arange(pixels) / samples.sum(-1)
-
-        def _uk(x_, theta):
-            z1 = (x_ - theta + 0.5) / (_sig * (2**0.5))
-            z2 = (x_ - theta - 0.5) / (_sig * (2**0.5))
-            DeltaE = erf(z1)/2 - erf(z2)/2
-            return I0 * DeltaE + b
 
         def _grad_nll(frame):
             x = np.arange(pixels).astype(float)
@@ -80,10 +76,10 @@ def td_est(estimates_instance):
 
     c.time_domain = np.array(time_domain).reshape(*origin_shape[:-1])
 
-    if c.metadata.measurement.lower() == 'spade':
+    if c.metadata.measurement.lower() in PM_SPADE_ALIAS :
         c.time_domain = c.time_domain + c.metadata.amplitude
 
-    elif c.metadata.measurement.lower() == 'di':
+    elif c.metadata.measurement.lower() in DI_ALIAS:
         c.time_domain = (c.time_domain - pixels/2) * qCMOS.PIXEL_SIZE
 
     return c
