@@ -27,8 +27,8 @@ __all__ = [
 #################
 #    Aliases    #
 #################
-PM_SPADE_ALIAS = ('spade', 'pm_spade')
-HG_SPADE_ALIAS = ('hg_spade',)
+PM_SPADE_ALIAS = ('spade', 'pm_spade', 'pm')
+HG_SPADE_ALIAS = ('hg_spade', 'hg')
 DI_ALIAS = ('di',)
 ALL_ALIAS = PM_SPADE_ALIAS + HG_SPADE_ALIAS + DI_ALIAS
 
@@ -220,14 +220,17 @@ class _Share:
     REPEAT = 200
 
     @classmethod
-    def CFI(cls, b, A, f, nu=1):
+    def CFI(cls, b, A, f, nu=1, shift=True, delay=0):
         n = np.arange(cls.SAMPLE_LENGTH)
+        if type(shift) is not bool:
+            raise TypeError('shift must be True or False')
+        shift = A if shift else 0
 
         def _cal(b, f):
-            alpha = tau * f * n
-            s  = A * np.sin(alpha)
+            alpha = tau * f * n + delay
+            s  = A * np.sin(alpha) + shift
             ds = A*tau*n * np.cos(alpha)
-            return (cls.gamma(s, b/nu) * ds**2).sum(-1)
+            return (cls.gamma(s, b, nu) * ds**2).sum(-1)
 
         if np.array(f).ndim != 0:
             return np.array([_cal(b, _f) for _f in f])
@@ -267,10 +270,10 @@ class HG_SPADE(SPADE):
     @classmethod
     def gamma(cls, s, b, nu=1, smoothing=1e-10, maxq=100):
         from scipy.special import factorial
-        s = np.clip(np.atleast_1d(s), smoothing, np.inf) # smoothing
+        # s = np.clip(np.atleast_1d(s), smoothing, np.inf) # smoothing
         b = np.clip(np.atleast_1d(b), smoothing, np.inf) # smoothing
         eta = s**2 / (4 * cls.SIGMA**2)
-        
+
         # if b == 0: # HG-SPADE is vulnerable to noise; even b = 1e-10 can degrade its performance.
         #     gamma_k = lambda k: np.exp(-eta) * eta**(k-1) * (k-eta)**2 / (cls.SIGMA**2 * factorial(k))
         #     return np.array([gamma_k(k) for k in np.arange(maxq+1)]).sum(0)
