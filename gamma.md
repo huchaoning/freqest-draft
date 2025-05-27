@@ -1,14 +1,14 @@
-# HG-SPADE
+# HG-SPADE 和 threshold
 
 ## HG-SPADE 的一些基本结论
 
 测量得到的结果: 
 $$
-p(q) = \frac{e^{-\eta}\eta^q}{q!}\qq{where}\eta:=\frac{s^2}{4\sigma^2}
+\mu_q = \frac{e^{-\eta}\eta^q}{q!}\qq{where}\eta:=\frac{s^2}{4\sigma^2}
 $$
 对 $s$ 的导数: 
 $$
-\dv s p(q) 
+\pdv{\mu_q}{s} 
 = \frac1{\sigma}\frac{e^{-\eta}}{q!} \eta^{q-\frac12}(q - \eta)
 $$
 令 $\gamma = \sum_q \gamma_q$, 得到
@@ -38,6 +38,8 @@ $$
 
 ## HG-SPADE 的 CFI
 
+**数值计算的 CFI 曲线**
+
 当 $s$ 比较小但不为 0 时, HG-SPADE 才能体现出一定的抗噪性. 比如我们如果关心频率 $f$ 的 CFI, 此时, 由于点光源是运动的, 所以 $s$ 不会时时刻刻为 0. 下图展示了 $b$ 比较小 (和原文图范围一样, 实际上也不小了) 和 $b$ 比较大的两种情况. 其中 $y$ 轴取了和 CFI 和 QFI 的比值.
 
 ![b](gamma.assets/b.svg)
@@ -45,4 +47,44 @@ $$
 可以看到, 在 $s$ 不严格为零时, 实际上 HG-SPADE 仍然有抗噪性. 但是这个优势会随着 $s$ 的缩小而变小. 特别是当 $s=0$ 时, HG-SPADE 的抗噪性处于最差状态, 任意小的噪声都会完全破坏 HG-SPADE (详见 2 节).
 
 ![b_small_s](gamma.assets/b_small_s.svg)
+
+**理论分析**
+
+我们要考虑随着噪声的增加, PM-SPADE 是否有 threshold. 因此, 我们考虑噪声主导极限. 在该条件下, $b$ 是一个比较大的量, 从而满足 $\mu_j +b'\approx b'$. 此时
+$$
+\gamma \approx \frac1{b'}\sum_q \qty(\pdv{\mu_q}{s})^2
+$$
+在这种条件下, 我们有 (求和 Mathematica 可以计算)
+$$
+\sigma^2\gamma^\text{(HG)}=\frac1{b'}\sum_q\frac{\eta^{2q-1}}{(q!)^2}\qty(q-\eta)^2e^{-2\eta} = \frac{2 \eta}{b'}  \qty[I_0(2 \eta)-I_1(2 \eta)]e^{-2 \eta}
+$$
+其中 $I$ 表示第一类虚宗量贝塞尔函数. 而对于 PM-SAPDE, 则有
+$$
+\sigma^2\gamma^\text{(PM)} = \frac{1}{4b'}\qty(3 \eta^3+6 \eta^2-7 \eta+2) e^{-2 \eta}
+$$
+如果假设 $s$ 的值域比较小 (类似上节 $A=0.01\sigma$ 情况), 可以得到
+$$
+\boxed{\sigma^2\gamma^\text{(HG)}\approx 0;\quad\sigma^2\gamma^\text{(PM)}\approx \frac1{2b'}}
+$$
+接下去考虑 DI, 有
+$$
+\sigma^2\gamma^\text{(DI)}\approx\frac{1}{2\pi b'}\sum_k\qty(-e^{-z_+^2}+e^{-z_-^2})^2\qq{where} z_\pm = \frac{ak-\theta \pm a/2}{\sqrt{2}\sigma}
+$$
+由于 $k$ 表示第 $k$ 个像素, 其求和范围是从 $-\infty$ 到 $\infty$. 同时如果像素尺寸足够小, 这个求和就可以近似为积分. 有
+$$
+\sum_k\qty(-e^{-z_+^2}+e^{-z_-^2})^2\approx\int^{\infty}_{-\infty}(-e^{-z_+^2}+e^{-z_-^2})^2\dd{k} = {2\sigma'\sqrt{\pi } \qty(1-e^{-\frac{1}{4 \sigma^{\prime 2}}})}
+$$
+其中 $\sigma':={\sigma}/{a}$. 由于我们假设像素尺寸足够小, 所以 $1/(4\sigma')$ 是个小量, 所以有
+$$
+1-{e^{-\frac{1}{4 \sigma^{\prime 2}}}}\approx\frac{1}{4\sigma^{\prime 2}}
+$$
+最终得到
+$$
+\boxed{\sigma^2\gamma^\text{(DI)}\approx\frac{1}{4\sqrt\pi\sigma' b'}}
+$$
+可以看到, 虽然他们都会随着 $b'$ 增大而逐渐趋于 0, 但是由于它们趋于零的速度不一样快, 所以可以计算比值
+$$
+\frac{F^\text{(DI)}}{F^\text{(PM)}}=\frac{\gamma^\text{(DI)}}{\gamma^\text{(HG)}}\frac{\sum_n\cdots}{\sum_n\cdots}=\frac a{2\sqrt{\pi}\sigma}
+$$
+因此可以说, 在位移范围不大的情况下, PM-SPADE 并不会随着噪声的增加而出现 threshold.
 
