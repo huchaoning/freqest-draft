@@ -230,7 +230,7 @@ class _Share:
             alpha = tau * f * n + delay
             s  = A * np.sin(alpha) + shift
             ds = A*tau*n * np.cos(alpha)
-            return (cls.gamma(s, b, nu) * ds**2).sum(-1)
+            return (cls.gamma(s, b, nu=nu) * ds**2).sum(-1)
 
         if np.array(f).ndim != 0:
             return np.array([_cal(b, _f) for _f in f])

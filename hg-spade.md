@@ -88,3 +88,10 @@ $$
 $$
 因此可以说, 在位移范围不大的情况下, PM-SPADE 并不会随着噪声的增加而出现 threshold.
 
+## HG-SPADE 模拟
+
+模拟使用的参数和实验一致, 结果如下
+
+<img src="C:\Users\Pepper\AppData\Roaming\Typora\typora-user-images\image-20250530095523065.png" alt="image-20250530095523065" style="zoom: 33%;" />
+
+可以看到, 模拟结果和 CRB 符合良好. 模拟中, 一共使用 20 个 HG 模式作为测量基 (HG0 至 HG19). 但是暂时还不知道为什么 DI 和 CRB符合更好, 这点与实验略有区别. 可能是由于模拟采用的是标准高斯光斑, 而实验不是. 
