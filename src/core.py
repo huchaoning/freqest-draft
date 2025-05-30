@@ -413,7 +413,7 @@ class Simulator:
             _sig = HG_SPADE.SIGMA
             def _gen_one(n, delay):
                 _eta = self._loc(n, delay)**2 / (2*_sig)**2
-                outcomes = np.random.poisson(np.clip(_eta, 1e-10, np.inf), size=photons)
+                outcomes = np.random.poisson(_eta, size=photons)
                 return np.histogram(outcomes, bins=np.arange(modes))[0]
 
         data = []
