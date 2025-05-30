@@ -119,3 +119,21 @@ $$
 
 问题在于, 如果不采用 smoothing 数值会出现错误. 但如果采用, 则数值结果会和理论值相差较大.
 
+## HG-SPADE 的 MLE
+
+$$
+\mu_q = \frac{e^{-\eta}\eta^q}{q!}\qq{where}\eta:=\frac{s^2}{4\sigma^2}
+$$
+
+对数似然函数的导数:
+$$
+\pdv{\ln L(\theta)}{\theta} = \sum_{q}\pdv{\mu_q}{\theta}\qty(\frac{n_q}{\mu_q} - 1)
+$$
+$\mu_q$ 对 $s$ 求导:
+$$
+\pdv{\mu_q}{s} = \frac1{\sigma}\frac{e^{-\eta}}{q!} \eta^{q-\frac12}(q - \eta)
+$$
+所以:
+$$
+\pdv{\ln L(\theta)}{\theta} =\sum_q \frac1{\sigma}\frac{e^{-\eta}}{q!} \eta^{q-\frac12}(q - \eta)\qty(\frac{n_q}{\mu_q} - 1)
+$$

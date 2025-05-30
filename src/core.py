@@ -94,8 +94,8 @@ class MetaData(_Repr):
         measurement (str): The type of measurement, '(PM/HG)_SPADE' or 'DI'.
         ground_truth (float): The ground truth value of frequency.
 
-        amplitude (float, unit: um): The amplitude value ().
-        pwm_duty (int, optional): The PWM duty cycle. Defaults to 0.
+        amplitude (float, unit: um): The amplitude value.
+        pwm_duty (int, optional): The PWM duty cycle. Defaults to 0. -1 means simulated data with noise.
     '''
     measurement: str
     ground_truth: float
@@ -150,7 +150,7 @@ class Estimates(_Repr):
     def est(self):
         return freq_est(td_est(self))
 
-    def savez(self, dirname):
+    def savez(self, dirname='./'):
         dirname = os.path.expanduser(dirname)
         filename = os.path.join(dirname, self.metadata.convert2str() + '.npz')
 
@@ -320,7 +320,10 @@ class DI(_Share):
 #####################
 class Simulator:
     def __init__(self, 
-                 metadata: MetaData, 
+                 measurement,
+                 amplitude, 
+                 ground_truth,
+
                  waveform: str = 'sign',
                  delay_params = (0, 0),
 
@@ -329,7 +332,10 @@ class Simulator:
                  sample_length = _Share.SAMPLE_LENGTH):
         ''' 
         Parameters:
-            metadata (MetaData): MetaData instance
+            measurement (str): The type of measurement, '(PM/HG)_SPADE' or 'DI'.
+            ground_truth (float): The ground truth value of frequency.
+            amplitude (float, unit: um): The amplitude value.
+
             waveform (str): 'sign' or 'sin' 
             delay_params (tuple, unit: s): Mean and standard deviation of a Gaussian random delay
 
@@ -337,8 +343,14 @@ class Simulator:
             repeat (int): default is 200
             sample_length (int): default is 50
         '''
+        if measurement.lower() in DI_ALIAS:
+            measurement = 'DI'
+        elif measurement.lower() in PM_SPADE_ALIAS:
+            measurement = 'SPADE'
+        elif measurement.lower() in HG_SPADE_ALIAS:
+            measurement = 'HG'
 
-        self.meta = metadata
+        self.meta = MetaData(measurement, ground_truth, amplitude)
         self.waveform = waveform.lower()
         self.delay_params = delay_params
 
@@ -364,13 +376,14 @@ class Simulator:
             raise ValueError("waveform must be 'sign' or 'sin'")
 
 
-    def gen(self, noise=0, photons=None):
+    def gen(self, noise=0, photons=None, modes=20):
         '''
         Generate simulated data using a statistical histogram method.
 
         Parameters:
-            photons (int, unit: photons): Number of photons to generate for each sample, default is 400 (DI) or 60 (SPADE).
             noise (float, unit: photons): The lambda parameter of the poisson, default is 0.
+            photons (int, unit: photons): Number of photons to generate for each sample, default is 400 (DI) or 60 (SPADE).
+            modes (int): Number of HG modes used for HG-SPADE. Affects HG-SPADE simulations only. Default is 20.
 
         Returns:
             np.ndarray: Simulated data array.
@@ -395,6 +408,13 @@ class Simulator:
                 loc = (self._loc(n, delay) + self.meta.amplitude) / qCMOS.PIXEL_SIZE
                 outcomes = np.random.normal(detectors/2+loc, _sig, photons)
                 return np.histogram(outcomes, bins=detectors, range=(0, detectors))[0]
+            
+        elif self.meta.measurement.lower() in HG_SPADE_ALIAS:
+            _sig = HG_SPADE.SIGMA
+            def _gen_one(n, delay):
+                _eta = self._loc(n, delay)**2 / (2*_sig)**2
+                outcomes = np.random.poisson(np.clip(_eta, 1e-10, np.inf), size=photons)
+                return np.histogram(outcomes, bins=np.arange(modes))[0]
 
         data = []
         for _ in range(self.repeat):
@@ -406,7 +426,7 @@ class Simulator:
         if noise == 0:
             self.meta.pwm_duty = 0
         else:
-            self.meta.pwm_duty = 'NOISY'
+            self.meta.pwm_duty = -1
 
         return Estimates(self.meta, 
                          np.round((data + np.random.poisson(noise, size=data.shape)) / qCMOS.CONVERSION_FACTOR + qCMOS.OFFSET),

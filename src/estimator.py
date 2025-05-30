@@ -1,7 +1,7 @@
 from math import pi, tau
 import numpy as np
 from scipy.optimize import minimize, curve_fit
-from scipy.special import erf
+from scipy.special import erf, factorial
 
 __all__ = [
     'td_est',
@@ -12,7 +12,7 @@ __all__ = [
 
 def td_est(estimates_instance):
     from .core import PM_SPADE_ALIAS, HG_SPADE_ALIAS, DI_ALIAS
-    from .core import Estimates, qCMOS, SPADE, DI
+    from .core import Estimates, qCMOS, PM_SPADE, HG_SPADE, DI
     c: Estimates = estimates_instance
 
     origin_shape = c.cropped_data.shape
@@ -21,24 +21,26 @@ def td_est(estimates_instance):
     pixels = origin_shape[-1]
 
     samples = qCMOS.convert2photons(flatten)
-    I0, b = c.photons, c.background
+    nu, b = c.photons, c.background
 
     # SPADE measurement
     if c.metadata.measurement.lower() in PM_SPADE_ALIAS:
-        _sig = SPADE.SIGMA
-        k = qCMOS.convert2photons(c.cropped_data)[..., 0] / qCMOS.convert2photons(c.cropped_data)[..., 1]
-        pre_est = 2 * _sig * (1 - np.sqrt(k)) / (1 + np.sqrt(k))
+        _sig = PM_SPADE.SIGMA
+        _k = qCMOS.convert2photons(c.cropped_data)[..., 0] / qCMOS.convert2photons(c.cropped_data)[..., 1]
+        pre_est = 2 * _sig * (1 - np.sqrt(_k)) / (1 + np.sqrt(_k))
 
-        def _uk(k, theta):
-            xi = theta / (2 * _sig)
-            return I0/2 * (xi + k)**2 * np.exp(-xi**2) + b
+        # def _Lam(k, theta):
+        #     xi = theta / (2 * _sig)
+        #     return nu/2 * (xi + k)**2 * np.exp(-xi**2) + b
 
         def _grad_nll(frame):
             def wrapper(theta):
                 xi = theta / (2 * _sig)
                 k = np.array([-1, 1])
-                return - np.sum(frame * np.log(_uk(k, theta)) - _uk(k, theta) - (frame * np.log(frame) - frame)), \
-                         np.sum(I0/(2*_sig) * np.exp(-xi**2)*((xi + k) * (xi**2 + k*xi - 1) * (frame/_uk(k, theta) - 1)))
+                Lam = nu/2 * (xi + k)**2 * np.exp(-xi**2) + b
+                dLam = nu/(2*_sig) * np.exp(-xi**2)*((xi + k) * (xi**2 + k*xi - 1))
+                return - np.sum(frame * np.log(Lam) - Lam - (frame * np.log(frame) - frame)), \
+                         np.sum(dLam * (frame/Lam - 1))
             return wrapper
 
     # DI (Ref. [1])
@@ -52,9 +54,25 @@ def td_est(estimates_instance):
                 z1 = (x - theta + 0.5) / (_sig * (2**0.5))
                 z2 = (x - theta - 0.5) / (_sig * (2**0.5))
                 DeltaE = erf(z1)/2 - erf(z2)/2
-                uk = I0 * DeltaE + b
-                return - np.sum(frame * np.log(uk) - uk - (frame * np.log(frame) - frame)), \
-                       - I0/(_sig*tau**0.5) * np.sum((-np.exp(-z1**2) + np.exp(-z2**2)) * (frame/uk - 1))
+                Lam = nu * DeltaE + b
+                dLam = - nu/(_sig*tau**0.5) * (-np.exp(-z1**2) + np.exp(-z2**2))
+                return - np.sum(frame * np.log(Lam) - Lam - (frame * np.log(frame) - frame)), \
+                         np.sum(dLam * (frame/Lam - 1))
+            return wrapper
+        
+    elif c.metadata.measurement.lower() in HG_SPADE_ALIAS:
+        _sig = HG_SPADE.SIGMA
+        _k = qCMOS.convert2photons(c.cropped_data)[..., 1] / qCMOS.convert2photons(c.cropped_data)[..., 0]
+        pre_est = 2 * _sig * np.sqrt(_k)
+        
+        def _grad_nll(frame):
+            q = np.arange(pixels)
+            def wrapper(theta):
+                eta = theta**2 / (4 * _sig**2)
+                Lam = nu * np.exp(-eta) * eta**q / factorial(q) + b
+                dLam = eta**(q - 1) * (q - eta) * (theta / (2 * _sig**2)) * np.exp(-eta) / factorial(q)
+                return - np.sum(frame * np.log(Lam) - Lam - (frame * np.log(frame) - frame)), \
+                         np.sum(dLam * (frame/Lam - 1))
             return wrapper
 
 
@@ -76,11 +94,14 @@ def td_est(estimates_instance):
 
     c.time_domain = np.array(time_domain).reshape(*origin_shape[:-1])
 
-    if c.metadata.measurement.lower() in PM_SPADE_ALIAS :
+    if c.metadata.measurement.lower() in PM_SPADE_ALIAS:
         c.time_domain = c.time_domain + c.metadata.amplitude
 
     elif c.metadata.measurement.lower() in DI_ALIAS:
         c.time_domain = (c.time_domain - pixels/2) * qCMOS.PIXEL_SIZE
+
+    elif c.metadata.measurement.lower() in HG_SPADE_ALIAS:
+        c.time_domain = - c.time_domain + c.metadata.amplitude
 
     return c
 
