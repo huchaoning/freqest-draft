@@ -359,7 +359,7 @@ class Simulator:
         self.N = sample_length
 
 
-    def _loc(self, n, delay):
+    def _loc(self, n, delay, smooth):
         t = n / self.fs
         fo = self.fs * self.meta.ground_truth
 
@@ -367,16 +367,16 @@ class Simulator:
             _k = np.sign(np.sin(tau * fo * (t + delay)))
             if _k == 0:
                 _k = 1
-            return self.meta.amplitude * (_k - 1)
+            return np.clip(self.meta.amplitude * (_k - 1), -np.inf, -smooth)
         
         elif self.waveform == 'sin':
-            return self.meta.amplitude * (np.sin(tau * fo * (t + delay)) - 1)
+            return np.clip(self.meta.amplitude * (np.sin(tau * fo * (t + delay)) - 1), -np.inf, -smooth)
 
         else:
             raise ValueError("waveform must be 'sign' or 'sin'")
 
 
-    def gen(self, noise=0, photons=None, modes=20):
+    def gen(self, noise=0, photons=None, modes=20, smooth=0.01*_Share.SIGMA):
         '''
         Generate simulated data using a statistical histogram method.
 
@@ -397,22 +397,22 @@ class Simulator:
             def _gen_one(n, delay):
                 return np.histogram(np.random.uniform(0, 1, photons), 
                                     [0, 
-                                     p1(self._loc(n, delay)), 
-                                     p1(self._loc(n, delay)) + p2(self._loc(n, delay))])[0]
+                                     p1(self._loc(n, delay, smooth)), 
+                                     p1(self._loc(n, delay, smooth)) + p2(self._loc(n, delay, smooth))])[0]
 
         elif self.meta.measurement.lower() in DI_ALIAS:
             _sig = DI.SIGMA / qCMOS.PIXEL_SIZE
             detectors = round((2*self.meta.amplitude + 8*DI.SIGMA) / qCMOS.PIXEL_SIZE)
             def _gen_one(n, delay):
                 # Convert length units to camera pixel size to match experimental data.
-                loc = (self._loc(n, delay) + self.meta.amplitude) / qCMOS.PIXEL_SIZE
+                loc = (self._loc(n, delay, smooth) + self.meta.amplitude) / qCMOS.PIXEL_SIZE
                 outcomes = np.random.normal(detectors/2+loc, _sig, photons)
                 return np.histogram(outcomes, bins=detectors, range=(0, detectors))[0]
             
         elif self.meta.measurement.lower() in HG_SPADE_ALIAS:
             _sig = HG_SPADE.SIGMA
             def _gen_one(n, delay):
-                _eta = self._loc(n, delay)**2 / (2*_sig)**2
+                _eta = self._loc(n, delay, smooth)**2 / (2*_sig)**2
                 outcomes = np.random.poisson(_eta, size=photons)
                 return np.histogram(outcomes, bins=np.arange(modes))[0]
 
