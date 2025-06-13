@@ -180,7 +180,7 @@ def LoadEstimates(file) -> Estimates:
 
 
 
-def NewEstimates(raw_path: str, metadata: MetaData, photons = None) -> Estimates:
+def NewEstimates(raw_path: str, metadata: MetaData) -> Estimates:
     if os.path.exists(raw_path):
         raw = np.load(raw_path)
     else:
