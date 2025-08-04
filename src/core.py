@@ -230,7 +230,7 @@ class _Share:
             alpha = tau * f * n + delay
             s  = A * np.sin(alpha) + shift
             ds = A*tau*n * np.cos(alpha)
-            return (cls.gamma(s, b, nu=nu) * ds**2).sum(-1)
+            return (cls.gamma(b, s, nu=nu) * ds**2).sum(-1)
 
         if np.array(f).ndim != 0:
             return np.array([_cal(b, _f) for _f in f])
@@ -253,7 +253,7 @@ class SPADE(_Share): # with PM-modes (by default)
     ROI = {'X0': 2128, 'Y0': 720, 'W': 180, 'H': 500}
 
     @classmethod
-    def gamma(cls, s, b, nu=1, smoothing=1e-10):
+    def gamma(cls, b, s, nu=1, smoothing=1e-10):
         b = np.clip(np.atleast_1d(b), smoothing, np.inf) # smoothing
         xi = np.atleast_1d(s) / (2 * cls.SIGMA)
         uk = lambda k: 1 / 2 * (xi + k)**2 * np.exp(-xi**2) + (b / nu)
@@ -268,7 +268,7 @@ class PM_SPADE(SPADE): # alias
 
 class HG_SPADE(SPADE):
     @classmethod
-    def gamma(cls, s, b, nu=1, smoothing=1e-10, maxq=100):
+    def gamma(cls, b, s, nu=1, smoothing=1e-10, maxq=100):
         from scipy.special import factorial
         # s = np.clip(np.atleast_1d(s), smoothing, np.inf) # smoothing
         b = np.clip(np.atleast_1d(b), smoothing, np.inf) # smoothing
@@ -293,7 +293,7 @@ class DI(_Share):
     ROI = {'X0': 1440, 'Y0': 876, 'W': 160, 'H': 228}
 
     @classmethod
-    def gamma(cls, s, b, a=qCMOS.PIXEL_SIZE, regin=np.inf, nu=1, smoothing=1e-10):
+    def gamma(cls, b, s, a=qCMOS.PIXEL_SIZE, regin=np.inf, nu=1, smoothing=1e-10):
         b = np.clip(np.atleast_1d(b), smoothing, np.inf) # smoothing
         s = np.atleast_1d(s)
 
