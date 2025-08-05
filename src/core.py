@@ -110,7 +110,11 @@ class MetaData(_Repr):
             self.measurement = self.measurement.upper()
 
     def convert2str(self):
-        return f'{self.measurement.lower()}_{round(self.amplitude*2/DMD.PIXEL_SIZE)}px_f{self.ground_truth}_d{self.pwm_duty}'
+        if str(self.pwm_duty).startswith('b='):
+            d_str = 'b' + self.pwm_duty[2:]
+        else:
+            d_str = 'd' + str(self.pwm_duty)
+        return f'{self.measurement.lower()}_{round(self.amplitude*2/DMD.PIXEL_SIZE)}px_f{self.ground_truth}_{d_str}'
 
     def __repr__(self):
         return super().__repr__()
@@ -426,7 +430,7 @@ class Simulator:
         if noise == 0:
             self.meta.pwm_duty = 0
         else:
-            self.meta.pwm_duty = -1
+            self.meta.pwm_duty = f'b={np.round(noise / photons, 5)}'
 
         return Estimates(self.meta, 
                          np.round((data + np.random.poisson(noise, size=data.shape)) / qCMOS.CONVERSION_FACTOR + qCMOS.OFFSET),
