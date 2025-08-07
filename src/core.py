@@ -16,6 +16,8 @@ __all__ = [
     'HG_SPADE',
     'DI',
 
+    'QFI',
+
     'MetaData',
     'Estimates',
     'LoadEstimates',
@@ -212,8 +214,6 @@ def NewEstimates(raw_path: str, metadata: MetaData) -> Estimates:
 
 
 
-
-
 ######################
 #    Measurements    #
 ######################
@@ -316,6 +316,26 @@ class DI(_Share):
         return (1 / uk * duk**2).sum(-1)
 
 
+
+
+#############
+#    QFI    #
+#############
+def QFI(b, A, f, nu=1, delay=0):
+    n = np.arange(_Share.SAMPLE_LENGTH)
+    
+    def _cal(b, f):
+        factor = 1 / (1+ 2*(b/nu))
+        alpha = tau * f * n + delay
+        ds = A*tau*n * np.cos(alpha)
+        return nu/_Share.SIGMA**2 * factor * (ds**2).sum(-1) 
+
+    if np.array(f).ndim != 0:
+        return np.array([_cal(b, _f) for _f in f])
+    elif np.array(b).ndim != 0:
+        return np.array([_cal(_b, f) for _b in b])
+    else:
+        return _cal(b, f)
 
 
 
