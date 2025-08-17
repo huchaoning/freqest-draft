@@ -400,7 +400,7 @@ class Simulator:
             raise ValueError("waveform must be 'sign' or 'sin'")
 
 
-    def gen(self, noise=0, photons=None, modes=20, smooth=0.01*_Share.SIGMA):
+    def gen(self, noise=0, photons=None, modes=21, smooth=0.01*_Share.SIGMA):
         '''
         Generate simulated data using a statistical histogram method.
 
@@ -438,7 +438,7 @@ class Simulator:
             def _gen_one(n, delay):
                 _eta = self._loc(n, delay, smooth)**2 / (2*_sig)**2
                 outcomes = np.random.poisson(_eta, size=photons)
-                return np.histogram(outcomes, bins=np.arange(modes))[0]
+                return np.histogram(outcomes, bins=np.arange(modes+1))[0]
 
         data = []
         for _ in range(self.repeat):
